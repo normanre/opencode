@@ -90,12 +90,13 @@ export function runDesktopMenuAction(
   }
 }
 
-function canUseWindow(win: BrowserWindow | null) {
+function canUseWindow(win: BrowserWindow | null): win is BrowserWindow {
   return !!win && !win.isDestroyed() && !win.webContents.isDestroyed()
 }
 
 function setZoom(win: BrowserWindow | null, value: number) {
   if (!canUseWindow(win)) return
-  win.webContents.setZoomFactor(Math.min(Math.max(value, 0.2), 10))
-  updateTitlebar(win)
+  const target = win
+  target.webContents.setZoomFactor(Math.min(Math.max(value, 0.2), 10))
+  updateTitlebar(target)
 }
