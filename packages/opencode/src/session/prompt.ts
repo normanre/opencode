@@ -1522,6 +1522,7 @@ export const layer = Layer.effect(
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
       yield* elog.info("command", { sessionID: input.sessionID, command: input.command, agent: input.agent })
+      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       const cmd = yield* commands.get(input.command)
       if (!cmd) {
         const available = (yield* commands.list()).map((c) => c.name)
@@ -1563,7 +1564,9 @@ export const layer = Layer.effect(
         const sh = Shell.preferred(cfg.shell)
         const results = yield* Effect.promise(() =>
           Promise.all(
-            shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
+            shellMatches.map(
+              async ([, cmd]) => (await Process.text([cmd], { shell: sh, cwd: session.directory, nothrow: true })).text,
+            ),
           ),
         )
         let index = 0
