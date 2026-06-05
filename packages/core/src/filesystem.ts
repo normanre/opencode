@@ -571,3 +571,9 @@ export const locationLayer = layer.pipe(
   Layer.provide(Ripgrep.defaultLayer),
   Layer.provideMerge(ProjectReference.locationLayer),
 )
+
+export namespace AppFileSystem {
+  export type Interface = FSUtil.Interface
+  export const Service = FSUtil.Service
+  export const defaultLayer = FSUtil.defaultLayer
+}
