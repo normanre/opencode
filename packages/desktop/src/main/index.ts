@@ -15,6 +15,7 @@ import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } fr
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
+import { partitionDeepLinks } from "./deep-link"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
@@ -74,6 +75,17 @@ function emitDeepLinks(urls: string[]) {
   if (urls.length === 0) return
   pendingDeepLinks.push(...urls)
   if (mainWindow) sendDeepLinks(mainWindow, urls)
+}
+
+function openMainWindow(urls: string[] = []) {
+  const win = createMainWindow()
+  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = win
+  win.on("closed", () => {
+    if (mainWindow !== win) return
+    mainWindow = BrowserWindow.getAllWindows().find((candidate) => candidate !== win && !candidate.isDestroyed()) ?? null
+  })
+  if (urls.length > 0) win.webContents.once("did-finish-load", () => sendDeepLinks(win, urls))
+  return win
 }
 
 function setInitStep(step: InitStep) {
@@ -175,9 +187,12 @@ const main = Effect.gen(function* () {
     const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls })
-      emitDeepLinks(urls)
+      const partitioned = partitionDeepLinks(urls)
+      emitDeepLinks(partitioned.current)
+      partitioned.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
+      if (partitioned.newWindows.length > 0 && partitioned.current.length === 0) return
     }
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show()
       mainWindow.focus()
     }
@@ -186,7 +201,9 @@ const main = Effect.gen(function* () {
   app.on("open-url", (event: Event, url: string) => {
     event.preventDefault()
     logger.log("deep link received via open-url", { url })
-    emitDeepLinks([url])
+    const partitioned = partitionDeepLinks([url])
+    emitDeepLinks(partitioned.current)
+    partitioned.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
   })
 
   app.on("before-quit", () => {
@@ -371,7 +388,11 @@ const main = Effect.gen(function* () {
 
   if (overlay) yield* Deferred.await(loadingComplete)
 
-  mainWindow = createMainWindow()
+  const initialDeepLinks = partitionDeepLinks(pendingDeepLinks.splice(0))
+  const initialWindowLinks =
+    initialDeepLinks.current.length > 0 ? initialDeepLinks.current : (initialDeepLinks.newWindows.shift() ?? [])
+  mainWindow = openMainWindow(initialWindowLinks)
+  initialDeepLinks.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
   if (mainWindow) {
     createMenu({
       trigger: (id) => {
