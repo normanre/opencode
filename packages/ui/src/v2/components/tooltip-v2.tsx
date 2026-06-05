@@ -15,6 +15,7 @@ export interface TooltipV2Props extends ComponentProps<typeof KobalteTooltip> {
 
 export function TooltipV2(props: TooltipV2Props) {
   let ref: HTMLDivElement | undefined
+  const portalMount = typeof document === "undefined" ? undefined : document.body
   const [state, setState] = createStore({
     open: false,
     block: false,
@@ -33,16 +34,9 @@ export function TooltipV2(props: TooltipV2Props) {
 
   const close = () => setState("open", false)
 
-  const inside = () => {
-    const active = document.activeElement
-    if (!ref || !active) return false
-    return ref.contains(active)
-  }
-
   const drop = (expand = state.expand) => {
     if (expand) return
     if (ref?.matches(":hover")) return
-    if (inside()) return
     setState("block", false)
   }
 
@@ -63,7 +57,7 @@ export function TooltipV2(props: TooltipV2Props) {
   }
 
   const leave = () => {
-    if (!inside()) close()
+    close()
     drop()
   }
 
@@ -118,7 +112,7 @@ export function TooltipV2(props: TooltipV2Props) {
           >
             {local.children}
           </KobalteTooltip.Trigger>
-          <KobalteTooltip.Portal>
+          <KobalteTooltip.Portal mount={portalMount}>
             <KobalteTooltip.Content
               ref={(el) => {
                 const theme = ref?.closest("[data-theme]")?.getAttribute("data-theme")

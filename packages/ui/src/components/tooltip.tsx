@@ -34,6 +34,7 @@ export function TooltipKeybind(props: TooltipKeybindProps) {
 
 export function Tooltip(props: TooltipProps) {
   let ref: HTMLDivElement | undefined
+  const portalMount = typeof document === "undefined" ? undefined : document.body
   const [state, setState] = createStore({
     open: false,
     block: false,
@@ -52,16 +53,9 @@ export function Tooltip(props: TooltipProps) {
 
   const close = () => setState("open", false)
 
-  const inside = () => {
-    const active = document.activeElement
-    if (!ref || !active) return false
-    return ref.contains(active)
-  }
-
   const drop = (expand = state.expand) => {
     if (expand) return
     if (ref?.matches(":hover")) return
-    if (inside()) return
     setState("block", false)
   }
 
@@ -82,7 +76,7 @@ export function Tooltip(props: TooltipProps) {
   }
 
   const leave = () => {
-    if (!inside()) close()
+    close()
     drop()
   }
 
@@ -136,7 +130,7 @@ export function Tooltip(props: TooltipProps) {
           >
             {local.children}
           </KobalteTooltip.Trigger>
-          <KobalteTooltip.Portal>
+          <KobalteTooltip.Portal mount={portalMount}>
             <KobalteTooltip.Content
               data-component="tooltip"
               data-placement={props.placement}
