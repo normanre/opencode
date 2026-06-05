@@ -116,6 +116,7 @@ export default function Layout(props: ParentProps) {
   const layout = useLayout()
   const layoutReady = createMemo(() => layout.ready())
   const platform = usePlatform()
+  const desktop = createMemo(() => platform.platform === "desktop")
   const settings = useSettings()
   const server = useServer()
   const notification = useNotification()
@@ -2397,7 +2398,8 @@ export default function Layout(props: ParentProps) {
                 aria-label={language.t("sidebar.nav.projectsAndSessions")}
                 data-component="sidebar-nav-desktop"
                 classList={{
-                  "hidden xl:block": true,
+                  "block": desktop(),
+                  "hidden xl:block": !desktop(),
                   "absolute inset-y-0 left-0": true,
                   "z-10": true,
                 }}
@@ -2420,7 +2422,7 @@ export default function Layout(props: ParentProps) {
 
               <Show when={layout.sidebar.opened()}>
                 <div
-                  class="hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
+                  class={desktop() ? "block absolute inset-y-0 z-30 w-0 overflow-visible" : "hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"}
                   style={{ left: `${side()}px` }}
                   onPointerDown={() => setState("sizing", true)}
                 >
@@ -2440,11 +2442,11 @@ export default function Layout(props: ParentProps) {
               </Show>
 
               <div
-                class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
+                class={desktop() ? "block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base" : "hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"}
                 style={{ left: "calc(4rem + 12px)" }}
               />
 
-              <div class="xl:hidden">
+              <div class={desktop() ? "hidden" : "xl:hidden"}>
                 <div
                   classList={{
                     "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
@@ -2471,8 +2473,9 @@ export default function Layout(props: ParentProps) {
 
               <div
                 classList={{
-                  "absolute inset-0": true,
-                  "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
+                  "absolute inset-0": !desktop(),
+                  "absolute inset-y-0 right-0 left-[var(--main-left)]": desktop(),
+                  "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": !desktop(),
                   "z-20": true,
                   "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":
                     !state.sizing,
@@ -2483,7 +2486,9 @@ export default function Layout(props: ParentProps) {
               >
                 <main
                   classList={{
-                    "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
+                    "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base": true,
+                    "border-l rounded-tl-[12px]": desktop(),
+                    "xl:border-l xl:rounded-tl-[12px]": !desktop(),
                   }}
                 >
                   <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
