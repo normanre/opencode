@@ -646,6 +646,15 @@ export default function Layout(props: ParentProps) {
     return result
   })
 
+  createEffect(() => {
+    if (!pageReady()) return
+    if (!layoutReady()) return
+
+    for (const project of layout.projects.list()) {
+      serverSync.child(project.worktree)
+    }
+  })
+
   type PrefetchQueue = {
     inflight: Set<string>
     pending: string[]
