@@ -48,13 +48,20 @@ const titlebarHeight = 40
 const maxZoomLevel = 10
 const minZoomLevel = 0.2
 
+function canUseWindow(win: BrowserWindow) {
+  return !win.isDestroyed() && !win.webContents.isDestroyed()
+}
+
 export function setRelaunchHandler(handler: () => void) {
   relaunchHandler = handler
 }
 
 export function setBackgroundColor(color: string) {
   backgroundColor = color
-  BrowserWindow.getAllWindows().forEach((win) => win.setBackgroundColor(color))
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (win.isDestroyed()) return
+    win.setBackgroundColor(color)
+  })
 }
 
 export function getBackgroundColor(): string | undefined {
@@ -94,12 +101,14 @@ export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> = 
 
 export function updateTitlebar(win: BrowserWindow) {
   if (process.platform !== "win32") return
+  if (!canUseWindow(win)) return
   win.setTitleBarOverlay(overlay(titlebarThemes.get(win), win.webContents.getZoomFactor()))
 }
 
 export function setPinchZoomEnabled(enabled: boolean) {
   getStore().set(PINCH_ZOOM_ENABLED_KEY, enabled)
   for (const win of BrowserWindow.getAllWindows()) {
+    if (!canUseWindow(win)) continue
     pinchZoomEnabled.set(win, enabled)
     win.webContents.send("pinch-zoom-enabled-changed", enabled)
     if (!enabled && win.webContents.getZoomFactor() !== 1) win.webContents.setZoomFactor(1)
@@ -175,6 +184,7 @@ export function createMainWindow() {
   wireZoom(win)
 
   win.once("ready-to-show", () => {
+    if (win.isDestroyed()) return
     win.show()
   })
 
@@ -425,8 +435,10 @@ function isRendererUrl(value?: string, html = false) {
 
 function wireZoom(win: BrowserWindow) {
   pinchZoomEnabled.set(win, getPinchZoomEnabled())
+  if (!canUseWindow(win)) return
   win.webContents.setZoomFactor(1)
   win.webContents.on("zoom-changed", (event, zoomDirection) => {
+    if (!canUseWindow(win)) return
     event.preventDefault()
     if (pinchZoomEnabled.get(win)) {
       win.webContents.setZoomFactor(clampZoom(win.webContents.getZoomFactor() + (zoomDirection === "in" ? 0.2 : -0.2)))
@@ -443,6 +455,7 @@ function clampZoom(value: number) {
 }
 
 function updateZoom(win: BrowserWindow) {
+  if (!canUseWindow(win)) return
   updateTitlebar(win)
   win.webContents.send("zoom-factor-changed", win.webContents.getZoomFactor())
 }

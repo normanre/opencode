@@ -23,12 +23,15 @@ export function runDesktopMenuAction(
       createMainWindow()
       return
     case "window.close":
+      if (win?.isDestroyed()) return
       win?.close()
       return
     case "window.minimize":
+      if (win?.isDestroyed()) return
       win?.minimize()
       return
     case "window.toggleMaximize":
+      if (win?.isDestroyed()) return
       if (win?.isMaximized()) {
         win.unmaximize()
         return
@@ -36,9 +39,11 @@ export function runDesktopMenuAction(
       win?.maximize()
       return
     case "view.reload":
+      if (!canUseWindow(win)) return
       win?.reload()
       return
     case "view.toggleDevTools":
+      if (!canUseWindow(win)) return
       win?.webContents.toggleDevTools()
       return
     case "view.resetZoom":
@@ -51,34 +56,46 @@ export function runDesktopMenuAction(
       setZoom(win, (win?.webContents.getZoomFactor() ?? 1) - 0.2)
       return
     case "view.toggleFullscreen":
+      if (win?.isDestroyed()) return
       win?.setFullScreen(!win.isFullScreen())
       return
     case "edit.undo":
+      if (!canUseWindow(win)) return
       win?.webContents.undo()
       return
     case "edit.redo":
+      if (!canUseWindow(win)) return
       win?.webContents.redo()
       return
     case "edit.cut":
+      if (!canUseWindow(win)) return
       win?.webContents.cut()
       return
     case "edit.copy":
+      if (!canUseWindow(win)) return
       win?.webContents.copy()
       return
     case "edit.paste":
+      if (!canUseWindow(win)) return
       win?.webContents.paste()
       return
     case "edit.delete":
+      if (!canUseWindow(win)) return
       win?.webContents.delete()
       return
     case "edit.selectAll":
+      if (!canUseWindow(win)) return
       win?.webContents.selectAll()
       return
   }
 }
 
+function canUseWindow(win: BrowserWindow | null) {
+  return !!win && !win.isDestroyed() && !win.webContents.isDestroyed()
+}
+
 function setZoom(win: BrowserWindow | null, value: number) {
-  if (!win) return
+  if (!canUseWindow(win)) return
   win.webContents.setZoomFactor(Math.min(Math.max(value, 0.2), 10))
   updateTitlebar(win)
 }

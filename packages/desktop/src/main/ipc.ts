@@ -182,11 +182,13 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("set-window-focus", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
     win?.focus()
   })
 
   ipcMain.handle("show-window", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
     win?.show()
   })
 
@@ -197,9 +199,10 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())
   ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => {
+    if (event.sender.isDestroyed()) return
     event.sender.setZoomFactor(factor)
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return
+    if (!win || win.isDestroyed()) return
     updateTitlebar(win)
   })
   ipcMain.handle("get-pinch-zoom-enabled", () => getPinchZoomEnabled())
@@ -208,7 +211,7 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("set-titlebar", (event: IpcMainInvokeEvent, theme: TitlebarTheme) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return
+    if (!win || win.isDestroyed()) return
     setTitlebar(win, theme)
   })
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
@@ -216,14 +219,21 @@ export function registerIpcHandlers(deps: Deps) {
   })
 }
 
+function canSend(win: BrowserWindow) {
+  return !win.isDestroyed() && !win.webContents.isDestroyed()
+}
+
 export function sendSqliteMigrationProgress(win: BrowserWindow, progress: SqliteMigrationProgress) {
+  if (!canSend(win)) return
   win.webContents.send("sqlite-migration-progress", progress)
 }
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {
+  if (!canSend(win)) return
   win.webContents.send("menu-command", id)
 }
 
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
+  if (!canSend(win)) return
   win.webContents.send("deep-link", urls)
 }
