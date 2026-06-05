@@ -92,7 +92,6 @@ export function homeSessionServerStatus(active: boolean, status: () => { working
   if (!active) return { working: false, tint: undefined }
   return status()
 }
-
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
 export function getProjectAvatarSource(id?: string, icon?: { color?: string; url?: string; override?: string }) {
