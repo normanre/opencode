@@ -17,28 +17,40 @@ type Deps = {
 }
 
 export function createMenu(deps: Deps) {
-  if (process.platform !== "darwin") return
+  const platform = (() => {
+    if (process.platform === "darwin") return "macos"
+    if (process.platform === "win32") return "windows"
+    if (process.platform === "linux") return "linux"
+    return undefined
+  })()
 
-  const template = DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, "macos")).map((menu) => {
+  if (!platform) return
+
+  const template = DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, platform)).map((menu) => {
     if (menu.role) return { role: nativeRole(menu.role) }
+
     return {
       label: menu.label,
       submenu: menu.items
-        ?.filter((entry) => desktopMenuVisible(entry, "macos"))
-        .map((entry) => nativeItem(entry, deps)),
+        ?.filter((entry) => desktopMenuVisible(entry, platform))
+        .map((entry) => nativeItem(entry, deps, platform)),
     }
   })
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOptions {
+function nativeItem(
+  entry: DesktopMenuEntry,
+  deps: Deps,
+  platform: "macos" | "windows" | "linux",
+): MenuItemConstructorOptions {
   if (entry.type === "separator") return { type: "separator" }
   if (entry.role) return { role: nativeRole(entry.role) }
 
   const item: MenuItemConstructorOptions = {
     label: entry.label,
-    accelerator: entry.accelerator?.macos,
+    accelerator: entry.accelerator?.[platform],
     enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
   }
 
@@ -46,6 +58,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
     const command = entry.command
     item.click = () => deps.trigger(command)
   }
+
   if (entry.action) {
     const action = entry.action
     item.click = () =>
@@ -54,6 +67,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
         relaunch: deps.relaunch,
       })
   }
+
   if (entry.href) {
     const href = entry.href
     item.click = () => shell.openExternal(href)

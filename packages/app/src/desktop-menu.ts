@@ -1,4 +1,4 @@
-export type DesktopMenuPlatform = "macos" | "windows"
+export type DesktopMenuPlatform = "macos" | "windows" | "linux"
 
 export type DesktopMenuAction =
   | "app.checkForUpdates"
@@ -110,8 +110,8 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       {
         type: "item",
         label: "New Window",
-        action: "window.new",
-        accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N" },
+        command: "window.new",
+        accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N", linux: "Ctrl+Shift+N" },
       },
       { type: "separator" },
       { type: "item", label: "Close Window", action: "window.close", role: "close" },

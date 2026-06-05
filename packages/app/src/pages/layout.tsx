@@ -1047,6 +1047,19 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+comma",
         onSelect: () => openSettings(),
       },
+      ...(platform.platform === "desktop" && platform.runDesktopMenuAction
+        ? [
+            {
+              id: "window.new",
+              title: language.t("command.window.new"),
+              category: language.t("command.category.file"),
+              keybind: "mod+shift+n",
+              onSelect: () => {
+                void platform.runDesktopMenuAction?.("window.new")
+              },
+            } satisfies CommandOption,
+          ]
+        : []),
       ...(platform.platform === "desktop" && platform.exportDebugLogs
         ? [
             {
