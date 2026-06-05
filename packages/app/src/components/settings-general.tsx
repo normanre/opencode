@@ -270,6 +270,7 @@ export const SettingsGeneral: Component = () => {
   const mono = () => monoInput(settings.appearance.font())
   const sans = () => sansInput(settings.appearance.uiFont())
   const terminal = () => terminalInput(settings.appearance.terminalFont())
+  const terminalColor = () => settings.appearance.terminalColor() || (theme.mode() === "dark" ? "#191515" : "#fcfcfc")
 
   const soundSelectProps = (
     enabled: () => boolean,
@@ -607,6 +608,29 @@ export const SettingsGeneral: Component = () => {
               class="text-12-regular"
               style={{ "font-family": terminalFontFamily(settings.appearance.terminalFont()) }}
             />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.terminalColor.title")}
+          description={language.t("settings.general.row.terminalColor.description")}
+        >
+          <div class="flex items-center gap-2">
+            <input
+              data-action="settings-terminal-color"
+              aria-label={language.t("settings.general.row.terminalColor.title")}
+              type="color"
+              value={terminalColor()}
+              onInput={(event) => settings.appearance.setTerminalColor(event.currentTarget.value)}
+              class="h-8 w-12 cursor-pointer rounded border border-border-weak-base bg-transparent p-1"
+            />
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={() => settings.appearance.setTerminalColor("")}
+            >
+              {language.t("common.default")}
+            </Button>
           </div>
         </SettingsRow>
       </SettingsList>

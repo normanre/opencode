@@ -43,6 +43,7 @@ export interface Settings {
     mono: string
     sans: string
     terminal: string
+    terminalColor: string
   }
   keybinds: Record<string, string>
   permissions: {
@@ -106,6 +107,12 @@ export function terminalFontFamily(font: string | undefined) {
   return stack(font, terminalBase)
 }
 
+function color(value: string | undefined) {
+  if (!value) return ""
+  const trimmed = value.trim()
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : ""
+}
+
 const defaultSettings: Settings = {
   general: {
     autoSave: true,
@@ -130,6 +137,7 @@ const defaultSettings: Settings = {
     mono: "",
     sans: "",
     terminal: "",
+    terminalColor: "",
   },
   keybinds: {},
   permissions: {
@@ -271,6 +279,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
         setTerminalFont(value: string) {
           setStore("appearance", "terminal", value.trim() ? value : "")
+        },
+        terminalColor: withFallback(() => color(store.appearance?.terminalColor), defaultSettings.appearance.terminalColor),
+        setTerminalColor(value: string) {
+          setStore("appearance", "terminalColor", color(value))
         },
       },
       keybinds: {

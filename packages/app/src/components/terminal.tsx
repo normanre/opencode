@@ -48,6 +48,15 @@ type TerminalColors = {
   selectionBackground: string
 }
 
+function contrastColor(input: HexColor) {
+  const hex = input.slice(1)
+  const red = Number.parseInt(hex.slice(0, 2), 16)
+  const green = Number.parseInt(hex.slice(2, 4), 16)
+  const blue = Number.parseInt(hex.slice(4, 6), 16)
+  const luminance = (red * 299 + green * 587 + blue * 114) / 1000
+  return luminance >= 140 ? "#211e1e" : "#f5f5f5"
+}
+
 const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
   light: {
     background: "#fcfcfc",
@@ -230,6 +239,16 @@ export const Terminal = (props: TerminalProps) => {
   const getTerminalColors = (): TerminalColors => {
     const mode = theme.mode() === "dark" ? "dark" : "light"
     const fallback = DEFAULT_TERMINAL_COLORS[mode]
+    const customBackground = settings.appearance.terminalColor()
+    if (customBackground) {
+      const foreground = contrastColor(customBackground as HexColor)
+      return {
+        background: customBackground,
+        foreground,
+        cursor: foreground,
+        selectionBackground: withAlpha(foreground as HexColor, mode === "dark" ? 0.25 : 0.2),
+      }
+    }
     const currentTheme = theme.themes()[theme.themeId()]
     if (!currentTheme) return fallback
     const variant = mode === "dark" ? currentTheme.dark : currentTheme.light
