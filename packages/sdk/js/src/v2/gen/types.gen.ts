@@ -1912,6 +1912,7 @@ export type AttachmentConfig = {
 export type Config = {
   $schema?: string
   shell?: string
+  powershell_profile?: boolean
   logLevel?: LogLevel
   server?: ServerConfig
   command?: {

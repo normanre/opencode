@@ -100,6 +100,12 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("migrates v1 PowerShell profile setting", () =>
+    Effect.sync(() => {
+      expect(ConfigMigrateV1.migrate({ shell: "pwsh", powershell_profile: false }).powershell_profile).toBe(false)
+    }),
+  )
+
   it.effect("migrates v1 command configuration", () =>
     Effect.sync(() => {
       expect(

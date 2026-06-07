@@ -40,6 +40,14 @@ describe("shell", () => {
     expect(Shell.posix("C:/tools/pwsh.exe")).toBe(false)
   })
 
+  test("powerShell shells load profile by default", () => {
+    expect(Shell.args("pwsh", "echo hi", "/tmp")).toEqual(["-Command", "echo hi"])
+  })
+
+  test("powerShell shells can disable profile loading", () => {
+    expect(Shell.args("pwsh", "echo hi", "/tmp", { profile: false })).toEqual(["-NoProfile", "-Command", "echo hi"])
+  })
+
   test("falls back when configured shell cannot be resolved", async () => {
     await withShell(undefined, async () => {
       const preferred = Shell.preferred()

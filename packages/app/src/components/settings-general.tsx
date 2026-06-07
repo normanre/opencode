@@ -356,6 +356,18 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
 
         <SettingsRow
+          title={language.t("settings.general.row.powershellProfile.title")}
+          description={language.t("settings.general.row.powershellProfile.description")}
+        >
+          <div data-action="settings-powershell-profile">
+            <Switch
+              checked={serverSync.data.config.powershell_profile ?? true}
+              onChange={(checked) => serverSync.updateConfig({ powershell_profile: checked })}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
           title={language.t("settings.general.row.reasoningSummaries.title")}
           description={language.t("settings.general.row.reasoningSummaries.description")}
         >

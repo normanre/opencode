@@ -560,7 +560,7 @@ export const layer = Layer.effect(
 
           const cfg = yield* config.get()
           const sh = Shell.preferred(cfg.shell)
-          const args = Shell.args(sh, input.command, cwd)
+          const args = Shell.args(sh, input.command, cwd, { profile: cfg.powershell_profile ?? true })
           let output = ""
           let aborted = false
 

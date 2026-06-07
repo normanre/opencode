@@ -756,6 +756,9 @@ export const dict = {
     "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
+  "settings.general.row.powershellProfile.title": "PowerShell profile",
+  "settings.general.row.powershellProfile.description":
+    "Load PowerShell profile files before running shell commands on Windows.",
   "settings.general.row.appearance.title": "Appearance",
   "settings.general.row.appearance.description": "Customise how OpenCode looks on your device",
   "settings.general.row.colorScheme.title": "Color scheme",

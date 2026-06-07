@@ -156,7 +156,7 @@ function info(file: string): Item {
   }
 }
 
-export function args(file: string, command: string, cwd: string) {
+export function args(file: string, command: string, cwd: string, opts?: { profile?: boolean }) {
   const n = name(file)
   if (n === "nu" || n === "fish") return ["-c", command]
   if (n === "zsh") {
@@ -188,7 +188,7 @@ export function args(file: string, command: string, cwd: string) {
     ]
   }
   if (n === "cmd") return ["/c", command]
-  if (ps(file)) return ["-NoProfile", "-Command", command]
+  if (ps(file)) return opts?.profile === false ? ["-NoProfile", "-Command", command] : ["-Command", command]
   return ["-c", command]
 }
 

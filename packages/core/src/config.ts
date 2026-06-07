@@ -32,6 +32,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   shell: Schema.String.pipe(Schema.optional).annotate({
     description: "Default shell to use for terminal and shell tool execution",
   }),
+  powershell_profile: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Load PowerShell profile files before running shell commands on Windows",
+  }),
   model: Schema.String.pipe(Schema.optional).annotate({
     description: "Default model to use when no session or agent model is selected",
   }),
