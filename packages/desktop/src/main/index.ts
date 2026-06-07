@@ -208,7 +208,7 @@ const main = Effect.gen(function* () {
   })
 
   app.on("render-process-gone", (_event, webContents, details) => {
-    writeLog("window", "app render process gone", { url: webContents.getURL(), details }, "error")
+    writeLog("window", "app render process gone", { url: webContents.isDestroyed() ? undefined : webContents.getURL(), details }, "error")
   })
 
   setRelaunchHandler(() => {
@@ -255,6 +255,9 @@ const main = Effect.gen(function* () {
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+    createWindow: () => {
+      openMainWindow()
+    },
   })
 
   yield* Effect.promise(() => app.whenReady())
@@ -354,6 +357,9 @@ const main = Effect.gen(function* () {
           app.relaunch()
           app.exit(0)
         })
+      },
+      createWindow: () => {
+        openMainWindow()
       },
     })
   }

@@ -3,6 +3,8 @@ import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import type { Session } from "electron"
+import type { WebContents } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -44,6 +46,7 @@ let relaunchHandler = () => {
 }
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
 const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
+const rendererSessions = new WeakSet<Session>()
 const titlebarHeight = 40
 const maxZoomLevel = 10
 const minZoomLevel = 0.2
@@ -164,20 +167,8 @@ export function createMainWindow() {
     },
   })
 
-  allowRendererPermissions(win)
+  initializeRendererSession(win.webContents.session)
   wireWindowRecovery(win, "main")
-
-  win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-    const { requestHeaders } = details
-    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
-    callback({ requestHeaders })
-  })
-
-  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    const { responseHeaders = {} } = details
-    addRendererHeaders(details.url, responseHeaders)
-    callback({ responseHeaders })
-  })
 
   state.manage(win)
   loadWindow(win, "index.html")
@@ -363,19 +354,40 @@ function addDocumentPolicy(response: Response, file: string) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
-function allowRendererPermissions(win: BrowserWindow) {
-  win.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+function initializeRendererSession(session: Session) {
+  if (rendererSessions.has(session)) return
+  rendererSessions.add(session)
+
+  session.webRequest.onBeforeSendHeaders((details, callback) => {
+    const { requestHeaders } = details
+    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+    callback({ requestHeaders })
+  })
+
+  session.webRequest.onHeadersReceived((details, callback) => {
+    const { responseHeaders = {} } = details
+    addRendererHeaders(details.url, responseHeaders)
+    callback({ responseHeaders })
+  })
+
+  session.setPermissionRequestHandler((webContents, permission, callback, details) => {
     callback(
       rendererPermissions.has(permission) &&
         isTrustedRendererUrl(details.requestingUrl) &&
-        webContents.id === win.webContents.id,
+        isTrustedRendererUrl(getWebContentsURL(webContents)),
     )
   })
-  win.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+
+  session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     if (!rendererPermissions.has(permission)) return false
-    if (webContents && webContents.id !== win.webContents.id) return false
+    if (webContents && !isTrustedRendererUrl(getWebContentsURL(webContents))) return false
     return isTrustedRendererUrl(details.requestingUrl) || isTrustedRendererUrl(requestingOrigin)
   })
+}
+
+function getWebContentsURL(webContents: WebContents) {
+  if (webContents.isDestroyed()) return
+  return webContents.getURL()
 }
 
 function isTrustedRendererUrl(value?: string) {

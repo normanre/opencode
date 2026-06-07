@@ -5,6 +5,7 @@ import { createMainWindow, updateTitlebar } from "./windows"
 export type DesktopMenuActionHandlers = Partial<{
   checkForUpdates: () => void
   relaunch: () => void
+  createWindow: () => void
 }>
 
 export function runDesktopMenuAction(
@@ -20,7 +21,7 @@ export function runDesktopMenuAction(
       handlers.relaunch?.()
       return
     case "window.new":
-      createMainWindow()
+      handlers.createWindow?.() ?? createMainWindow()
       return
     case "window.close":
       if (win?.isDestroyed()) return

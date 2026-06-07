@@ -34,6 +34,7 @@ type Deps = {
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  createWindow: () => void
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -202,7 +203,7 @@ export function registerIpcHandlers(deps: Deps) {
     setTitlebar(win, theme)
   })
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
-    runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action)
+    runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action, { createWindow: deps.createWindow })
   })
 }
 

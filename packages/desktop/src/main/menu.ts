@@ -14,6 +14,7 @@ type Deps = {
   trigger: (id: string) => void
   checkForUpdates: () => void
   relaunch: () => void
+  createWindow: () => void
 }
 
 export function createMenu(deps: Deps) {
