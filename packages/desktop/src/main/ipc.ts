@@ -13,8 +13,8 @@ import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar }
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 
-const notificationClaims = new Map<string, number>()
-const notificationClaimTtl = 1000 * 60 * 60
+const notificationClaims = new Set<string>()
+const notificationClaimTtl = 1000 * 5
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -193,14 +193,11 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("claim-notification", (_event: IpcMainInvokeEvent, id: string) => {
-    const now = Date.now()
-    for (const [claimID, claimedAt] of notificationClaims) {
-      if (now - claimedAt <= notificationClaimTtl) continue
-      notificationClaims.delete(claimID)
-    }
-
     if (notificationClaims.has(id)) return false
-    notificationClaims.set(id, now)
+    notificationClaims.add(id)
+    setTimeout(() => {
+      notificationClaims.delete(id)
+    }, notificationClaimTtl).unref?.()
     return true
   })
 

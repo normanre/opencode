@@ -22,7 +22,7 @@ import { createEffect, createMemo, createResource, createSignal, onCleanup, onMo
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
-import { initializationData, initializationReady } from "./initialization"
+import { initializationData } from "./initialization"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
@@ -204,8 +204,10 @@ const createPlatform = (): Platform => {
     },
 
     notify: async (title, description, href) => {
-      const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
-      if (focused) return
+      const claimId = `${title}\u0000${description ?? ""}\u0000${href ?? ""}`
+      const claimed = await window.api.claimNotification(claimId)
+      console.debug(`Notification claim for "${claimId}": ${claimed}`)
+      if (!claimed) return
 
       const notification = new Notification(title, {
         body: description ?? "",
@@ -218,8 +220,6 @@ const createPlatform = (): Platform => {
         notification.close()
       }
     },
-
-    claimNotification: (id) => window.api.claimNotification(id),
 
     fetch: (input, init) => {
       if (input instanceof Request) return fetch(input)
