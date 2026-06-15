@@ -219,6 +219,8 @@ const createPlatform = (): Platform => {
       }
     },
 
+    claimNotification: (id) => window.api.claimNotification(id),
+
     fetch: (input, init) => {
       if (input instanceof Request) return fetch(input)
       return fetch(input, init)

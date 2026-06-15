@@ -21,7 +21,11 @@ export function runDesktopMenuAction(
       handlers.relaunch?.()
       return
     case "window.new":
-      handlers.createWindow?.() ?? createMainWindow()
+      if (handlers.createWindow) {
+        handlers.createWindow()
+        return
+      }
+      createMainWindow()
       return
     case "window.close":
       if (win?.isDestroyed()) return

@@ -49,6 +49,9 @@ type PlatformBase = {
   /** Send a system notification (optional deep link) */
   notify(title: string, description?: string, href?: string): Promise<void>
 
+  /** Claim a notification so only one window handles it */
+  claimNotification?(id: string): Promise<boolean>
+
   /** Open a native attachment picker and read selected files sequentially (desktop only) */
   openAttachmentPickerDialog?(
     opts: OpenAttachmentPickerOptions,

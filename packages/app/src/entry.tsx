@@ -78,6 +78,8 @@ const notify: Platform["notify"] = async (title, description, href) => {
   }
 }
 
+const claimNotification: NonNullable<Platform["claimNotification"]> = async () => true
+
 const openLink: Platform["openLink"] = (url) => {
   window.open(url, "_blank")
 }
@@ -127,6 +129,7 @@ const platform: Platform = {
   forward,
   restart,
   notify,
+  claimNotification,
   getDefaultServer: async () => {
     const stored = readDefaultServerUrl()
     return stored ? ServerConnection.Key.make(stored) : null

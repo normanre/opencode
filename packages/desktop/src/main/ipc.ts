@@ -13,6 +13,9 @@ import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar }
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 
+const notificationClaims = new Map<string, number>()
+const notificationClaimTtl = 1000 * 60 * 60
+
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
   return [{ name: "Files", extensions: ext }]
@@ -187,6 +190,18 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
     new Notification({ title, body }).show()
+  })
+
+  ipcMain.handle("claim-notification", (_event: IpcMainInvokeEvent, id: string) => {
+    const now = Date.now()
+    for (const [claimID, claimedAt] of notificationClaims) {
+      if (now - claimedAt <= notificationClaimTtl) continue
+      notificationClaims.delete(claimID)
+    }
+
+    if (notificationClaims.has(id)) return false
+    notificationClaims.set(id, now)
+    return true
   })
 
   ipcMain.handle("get-window-count", () => BrowserWindow.getAllWindows().length)

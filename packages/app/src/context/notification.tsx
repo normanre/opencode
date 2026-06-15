@@ -227,33 +227,43 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       return sessionID === activeSession
     }
 
-    const handleSessionIdle = (directory: string, event: { properties: { sessionID?: string } }, time: number) => {
+    const handleSessionIdle = async (
+      directory: string,
+      event: { properties: { sessionID?: string } },
+      time: number,
+    ) => {
       const sessionID = event.properties.sessionID
       void lookup(directory, sessionID).then((session) => {
         if (meta.disposed) return
         if (!session) return
         if (session.parentID) return
 
-        if (settings.sounds.agentEnabled()) {
-          void playSoundById(settings.sounds.agent())
-        }
+        const claimID = `session.idle:${directory}:${sessionID}:${session.version}`
 
-        append({
-          directory,
-          time,
-          viewed: viewedInCurrentSession(directory, sessionID),
-          type: "turn-complete",
-          session: sessionID,
+        Promise.resolve(platform.claimNotification?.(claimID)).then((claimed) => {
+          if (claimed === false || meta.disposed) return
+
+          if (settings.sounds.agentEnabled()) {
+            void playSoundById(settings.sounds.agent())
+          }
+
+          append({
+            directory,
+            time,
+            viewed: viewedInCurrentSession(directory, sessionID),
+            type: "turn-complete",
+            session: sessionID,
+          })
+
+          const href = `/${base64Encode(directory)}/session/${sessionID}`
+          if (settings.notifications.agent()) {
+            void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
+          }
         })
-
-        const href = `/${base64Encode(directory)}/session/${sessionID}`
-        if (settings.notifications.agent()) {
-          void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
-        }
       })
     }
 
-    const handleSessionError = (
+    const handleSessionError = async (
       directory: string,
       event: { properties: { sessionID?: string; error?: EventSessionError["properties"]["error"] } },
       time: number,
@@ -263,26 +273,32 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         if (meta.disposed) return
         if (session?.parentID) return
 
-        if (settings.sounds.errorsEnabled()) {
-          void playSoundById(settings.sounds.errors())
-        }
+        const claimID = `session.error:${directory}:${sessionID ?? "global"}:${session?.version ?? session?.time.updated ?? time}`
 
-        const error = "error" in event.properties ? event.properties.error : undefined
-        append({
-          directory,
-          time,
-          viewed: viewedInCurrentSession(directory, sessionID),
-          type: "error",
-          session: sessionID ?? "global",
-          error,
+        Promise.resolve(platform.claimNotification?.(claimID)).then((claimed) => {
+          if (claimed === false || meta.disposed) return
+
+          if (settings.sounds.errorsEnabled()) {
+            void playSoundById(settings.sounds.errors())
+          }
+
+          const error = "error" in event.properties ? event.properties.error : undefined
+          append({
+            directory,
+            time,
+            viewed: viewedInCurrentSession(directory, sessionID),
+            type: "error",
+            session: sessionID ?? "global",
+            error,
+          })
+          const description =
+            session?.title ??
+            (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
+          const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
+          if (settings.notifications.errors()) {
+            void platform.notify(language.t("notification.session.error.title"), description, href)
+          }
         })
-        const description =
-          session?.title ??
-          (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
-        const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
-        if (settings.notifications.errors()) {
-          void platform.notify(language.t("notification.session.error.title"), description, href)
-        }
       })
     }
 
@@ -293,10 +309,10 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       const directory = e.name
       const time = Date.now()
       if (event.type === "session.idle") {
-        handleSessionIdle(directory, event, time)
+        void handleSessionIdle(directory, event, time)
         return
       }
-      handleSessionError(directory, event, time)
+      void handleSessionError(directory, event, time)
     })
     onCleanup(() => {
       meta.disposed = true

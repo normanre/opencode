@@ -398,7 +398,7 @@ export default function Layout(props: ParentProps) {
         alertedAtBySession.delete(sessionKey)
       }
 
-      const unsub = serverSDK().event.listen((e) => {
+      const unsub = serverSDK().event.listen(async (e) => {
         if (e.details?.type === "worktree.ready") {
           setBusy(e.name, false)
           WorktreeState.ready(serverSDK().scope, e.name)
@@ -447,6 +447,8 @@ export default function Layout(props: ParentProps) {
             ? language.t("notification.permission.description", { sessionTitle, projectName })
             : language.t("notification.question.description", { sessionTitle, projectName })
         const href = `/${base64Encode(directory)}/session/${props.sessionID}`
+
+        if ((await platform.claimNotification?.(`${e.name}:${props.id}`)) === false) return
 
         const now = Date.now()
         const lastAlerted = alertedAtBySession.get(sessionKey) ?? 0
@@ -1055,7 +1057,7 @@ export default function Layout(props: ParentProps) {
               id: "window.new",
               title: language.t("command.window.new"),
               category: language.t("command.category.file"),
-              keybind: "mod+shift+n",
+              keybind: "none",
               onSelect: () => {
                 void platform.runDesktopMenuAction?.("window.new")
               },
