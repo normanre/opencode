@@ -644,7 +644,7 @@ export default function Layout(props: ParentProps) {
     if (!layoutReady()) return
 
     for (const project of layout.projects.list()) {
-      serverSync.child(project.worktree)
+      serverSync().child(project.worktree)
     }
   })
 

@@ -39,6 +39,11 @@ function numberFromTitle(title: string) {
   return titleNumber(title, MAX_TERMINAL_SESSIONS)
 }
 
+function isMissingPtySession(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes("PTY session not found")
+}
+
 function pty(value: unknown): LocalPTY | undefined {
   if (!record(value)) return
 
@@ -215,6 +220,7 @@ function createWorkspaceTerminalSession(
         size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
       })
       .catch((error: unknown) => {
+        if (isMissingPtySession(error)) return
         if (previous) {
           const currentIndex = store.all.findIndex((item) => item.id === pty.id)
           if (currentIndex >= 0) setStore("all", currentIndex, previous)

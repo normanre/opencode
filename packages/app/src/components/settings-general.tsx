@@ -306,8 +306,8 @@ export const SettingsGeneral: Component = () => {
         >
           <div data-action="settings-powershell-profile">
             <Switch
-              checked={serverSync.data.config.powershell_profile ?? true}
-              onChange={(checked) => serverSync.updateConfig({ powershell_profile: checked })}
+              checked={serverSync().data.config.powershell_profile ?? true}
+              onChange={(checked) => serverSync().updateConfig({ powershell_profile: checked })}
             />
           </div>
         </SettingsRow>

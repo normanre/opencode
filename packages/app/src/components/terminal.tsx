@@ -77,6 +77,11 @@ const debugTerminal = (...values: unknown[]) => {
   console.debug("[terminal]", ...values)
 }
 
+function isMissingPtySession(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes("PTY session not found")
+}
+
 const useTerminalUiBindings = (input: {
   container: HTMLDivElement
   term: Term
@@ -232,6 +237,10 @@ export const Terminal = (props: TerminalProps) => {
         size: { cols, rows },
       })
       .catch((err) => {
+        if (isMissingPtySession(err)) {
+          local.onConnectError?.(err)
+          return
+        }
         debugTerminal("failed to sync terminal size", err)
       })
   }
