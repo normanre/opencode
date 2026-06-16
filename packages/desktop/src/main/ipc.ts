@@ -15,6 +15,7 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
 
 const notificationClaims = new Set<string>()
 const notificationClaimTtl = 1000 * 5
+const windowRoutes = new Map<number, string>()
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -220,6 +221,23 @@ export function registerIpcHandlers(deps: Deps) {
     win?.show()
   })
 
+  ipcMain.handle("set-window-route", (event: IpcMainInvokeEvent, route: string) => {
+    const id = event.sender.id
+    windowRoutes.set(id, route)
+    if (!event.sender.listenerCount("destroyed")) {
+      event.sender.once("destroyed", () => windowRoutes.delete(id))
+    }
+  })
+
+  ipcMain.handle("show-window-for-href", (_event: IpcMainInvokeEvent, href: string) => {
+    const win = findWindowForHref(href)
+    if (!win) return false
+    win.show()
+    win.focus()
+    sendDeepLinks(win, [href])
+    return true
+  })
+
   ipcMain.on("relaunch", () => {
     deps.relaunch()
   })
@@ -262,4 +280,28 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   if (!canSend(win)) return
   win.webContents.send("deep-link", urls)
+}
+
+function findWindowForHref(href: string) {
+  const pathname = (() => {
+    try {
+      return new URL(href, "http://localhost").pathname
+    } catch {
+      return href
+    }
+  })()
+
+  const exact = BrowserWindow.getAllWindows().find((win) => !win.isDestroyed() && windowRoutes.get(win.webContents.id) === pathname)
+  if (exact) return exact
+
+  const directory = pathname.split("/").filter(Boolean)[0]
+  if (!directory) return undefined
+
+  return BrowserWindow.getAllWindows().find((win) => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return false
+    const currentRoute = windowRoutes.get(win.webContents.id)
+    if (!currentRoute) return false
+    const match = currentRoute.split("/").filter(Boolean)[0] === directory
+    return match
+  })
 }

@@ -206,7 +206,6 @@ const createPlatform = (): Platform => {
     notify: async (title, description, href) => {
       const claimId = `${title}\u0000${description ?? ""}\u0000${href ?? ""}`
       const claimed = await window.api.claimNotification(claimId)
-      console.debug(`Notification claim for "${claimId}": ${claimed}`)
       if (!claimed) return
 
       const notification = new Notification(title, {
@@ -214,12 +213,14 @@ const createPlatform = (): Platform => {
         icon: "https://opencode.ai/favicon-96x96-v3.png",
       })
       notification.onclick = () => {
-        void window.api.showWindow()
-        void window.api.setWindowFocus()
-        handleNotificationClick(href)
-        notification.close()
+        void window.api.showWindowForHref(href ?? "").then((matched) => {
+          if (!matched) handleNotificationClick(href)
+          notification.close()
+        })
       }
     },
+
+    setWindowRoute: (route) => window.api.setWindowRoute(route),
 
     fetch: (input, init) => {
       if (input instanceof Request) return fetch(input)

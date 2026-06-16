@@ -136,6 +136,10 @@ export default function Layout(props: ParentProps) {
   createEffect(() => setV2Toast(newDesign()))
   const initialDirectory = decode64(params.dir)
   const location = useLocation()
+  createEffect(() => {
+    if (platform.platform !== "desktop") return
+    void platform.setWindowRoute?.(`${location.pathname}${location.search}${location.hash}`)
+  })
   const route = createMemo(() => {
     const slug = params.dir
     if (!slug) return { slug, dir: "" }

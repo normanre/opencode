@@ -52,6 +52,9 @@ type PlatformBase = {
   /** Claim a notification so only one window handles it */
   claimNotification?(id: string): Promise<boolean>
 
+  /** Track current SPA route for desktop window targeting */
+  setWindowRoute?(route: string): Promise<void>
+
   /** Open a native attachment picker and read selected files sequentially (desktop only) */
   openAttachmentPickerDialog?(
     opts: OpenAttachmentPickerOptions,
