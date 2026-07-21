@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app } from "electron"
 
 import { Deferred, Effect, Fiber } from "effect"
 import contextMenu from "electron-context-menu"
@@ -21,6 +21,12 @@ import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as 
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
+  finishFirstLaunchOnboarding,
+  initializeOldLayoutEligibility,
+  isFirstLaunchOnboardingPending,
+  isOldLayoutEligible,
+} from "./onboarding"
+import {
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
@@ -28,17 +34,22 @@ import {
   type SidecarListener,
 } from "./server"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
+import { safeWebContentsURL } from "./window-state"
 import {
   createMainWindow,
+  getLastFocusedWindow,
   registerRendererProtocol,
   setRelaunchHandler,
+  setAppQuitting,
   setBackgroundColor,
   setDockIcon,
+  restoreMainWindows,
 } from "./windows"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
+import { cleanupStoreFiles } from "./store-cleanup"
 
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
@@ -54,7 +65,6 @@ const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 let logger: ReturnType<typeof initLogging>
-let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 
 const pendingDeepLinks: string[] = []
@@ -70,17 +80,16 @@ function useEnvProxy() {
 
 function emitDeepLinks(urls: string[]) {
   if (urls.length === 0) return
+  const win = getLastFocusedWindow()
+  if (win && !win.webContents.isLoading()) {
+    sendDeepLinks(win, urls)
+    return
+  }
   pendingDeepLinks.push(...urls)
-  if (mainWindow) sendDeepLinks(mainWindow, urls)
 }
 
 function openMainWindow(urls: string[] = []) {
   const win = createMainWindow()
-  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = win
-  win.on("closed", () => {
-    if (mainWindow !== win) return
-    mainWindow = BrowserWindow.getAllWindows().find((candidate) => candidate !== win && !candidate.isDestroyed()) ?? null
-  })
   if (urls.length > 0) win.webContents.once("did-finish-load", () => sendDeepLinks(win, urls))
   return win
 }
@@ -144,6 +153,7 @@ const main = Effect.gen(function* () {
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
   )
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
+  initializeOldLayoutEligibility(app.getPath("userData"))
   logger = initLogging()
   initCrashReporter()
 
@@ -167,6 +177,7 @@ const main = Effect.gen(function* () {
     wslServers.stopAll()
   }
   const relaunch = () => {
+    setAppQuitting()
     void stopSidecars().finally(() => {
       app.relaunch()
       app.exit(0)
@@ -208,9 +219,10 @@ const main = Effect.gen(function* () {
       partitioned.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
       if (partitioned.newWindows.length > 0 && partitioned.current.length === 0) return
     }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show()
-      mainWindow.focus()
+    const win = getLastFocusedWindow()
+    if (win) {
+      win.show()
+      win.focus()
     }
   })
 
@@ -223,10 +235,12 @@ const main = Effect.gen(function* () {
   })
 
   app.on("before-quit", () => {
+    setAppQuitting()
     void stopSidecars()
   })
 
   app.on("will-quit", () => {
+    setAppQuitting()
     void stopSidecars()
   })
 
@@ -235,7 +249,7 @@ const main = Effect.gen(function* () {
   })
 
   app.on("render-process-gone", (_event, webContents, details) => {
-    writeLog("window", "app render process gone", { url: webContents.isDestroyed() ? undefined : webContents.getURL(), details }, "error")
+    writeLog("window", "app render process gone", { url: safeWebContentsURL(webContents), details }, "error")
   })
 
   setRelaunchHandler(() => {
@@ -244,6 +258,7 @@ const main = Effect.gen(function* () {
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
+      setAppQuitting()
       void stopSidecars().finally(() => app.exit(0))
     })
   }
@@ -253,6 +268,19 @@ const main = Effect.gen(function* () {
   yield* Effect.promise(() => app.whenReady())
 
   if (!TEST_ONBOARDING) migrate()
+  yield* Effect.promise(() => cleanupStoreFiles(app.getPath("userData"))).pipe(
+    Effect.tap((result) =>
+      Effect.sync(() => {
+        if (result.deleted.length === 0) return
+        logger.log("cleaned scoped store files", { count: result.deleted.length, scanned: result.scanned })
+      }),
+    ),
+    Effect.catch((error) =>
+      Effect.sync(() => {
+        logger.warn("failed to clean scoped store files", error)
+      }),
+    ),
+  )
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()
@@ -272,6 +300,9 @@ const main = Effect.gen(function* () {
     consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
+    isFirstLaunchOnboardingPending,
+    finishFirstLaunchOnboarding,
+    isOldLayoutEligible,
     getDisplayBackend: async () => null,
     setDisplayBackend: async () => undefined,
     parseMarkdown: async (markdown) => parseMarkdown(markdown),
@@ -369,12 +400,16 @@ const main = Effect.gen(function* () {
   const initialDeepLinks = partitionDeepLinks(pendingDeepLinks.splice(0))
   const initialWindowLinks =
     initialDeepLinks.current.length > 0 ? initialDeepLinks.current : (initialDeepLinks.newWindows.shift() ?? [])
-  mainWindow = openMainWindow(initialWindowLinks)
+  const windows = restoreMainWindows()
+  const initialWindow = windows[0]
+  if (initialWindow && initialWindowLinks.length > 0) {
+    initialWindow.webContents.once("did-finish-load", () => sendDeepLinks(initialWindow, initialWindowLinks))
+  }
   initialDeepLinks.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
-  if (mainWindow) {
+  if (windows.length) {
     createMenu({
       trigger: (id) => {
-        const win = BrowserWindow.getFocusedWindow() ?? mainWindow
+        const win = getLastFocusedWindow()
         if (win) sendMenuCommand(win, id)
       },
       checkForUpdates: () => {

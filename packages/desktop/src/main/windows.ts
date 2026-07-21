@@ -2,6 +2,8 @@ import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
+import { randomUUID } from "node:crypto"
+import { rmSync } from "node:fs"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
 import type { Session } from "electron"
 import type { WebContents } from "electron"
@@ -9,9 +11,11 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { exportDebugLogs, write as writeLog } from "./logging"
-import { getStore } from "./store"
-import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
+import { getStore, removeStoreFile } from "./store"
+import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { createWindowRegistry } from "./window-registry"
+import { safeWindowURL } from "./window-state"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -35,18 +39,29 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       standard: true,
       supportFetchAPI: true,
+      stream: true,
     },
   },
 ])
 
 let backgroundColor: string | undefined
 let relaunchHandler = () => {
+  setAppQuitting()
   app.relaunch()
   app.exit(0)
 }
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
 const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
 const rendererSessions = new WeakSet<Session>()
+const windowIDs = new WeakMap<BrowserWindow, string>()
+const registry = createWindowRegistry<BrowserWindow>({
+  read: () => getStore().get(WINDOW_IDS_KEY),
+  write: (ids) => getStore().set(WINDOW_IDS_KEY, ids),
+  cleanup: (id) => {
+    rmSync(join(app.getPath("userData"), windowStateFile(id)), { force: true })
+    removeStoreFile(windowDataFile(id))
+  },
+})
 const titlebarHeight = 40
 const maxZoomLevel = 10
 const minZoomLevel = 0.2
@@ -59,11 +74,16 @@ export function setRelaunchHandler(handler: () => void) {
   relaunchHandler = handler
 }
 
+export function setAppQuitting(quitting = true) {
+  registry.setQuitting(quitting)
+}
+
 export function setBackgroundColor(color: string) {
   backgroundColor = color
   BrowserWindow.getAllWindows().forEach((win) => {
     if (win.isDestroyed()) return
     win.setBackgroundColor(color)
+    if (process.platform === "darwin") win.invalidateShadow()
   })
 }
 
@@ -99,6 +119,13 @@ function overlay(theme: Partial<TitlebarTheme> = {}, zoom = 1) {
 
 export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> = {}) {
   titlebarThemes.set(win, theme)
+  // macOS draws the window frame hairline and shadow using the NSWindow
+  // appearance, which follows nativeTheme rather than the rendered content.
+  // Align it with the app theme so a light app on a dark system does not get
+  // the dark-appearance border and shadow. A "system" scheme must map to
+  // "system" (not the resolved mode) or prefers-color-scheme stops tracking
+  // OS appearance changes in the renderer.
+  if (process.platform === "darwin") nativeTheme.themeSource = theme.scheme ?? theme.mode ?? "system"
   updateTitlebar(win)
 }
 
@@ -123,14 +150,32 @@ export function getPinchZoomEnabled() {
   return getStore().get(PINCH_ZOOM_ENABLED_KEY) === true
 }
 
+export function getWindowID(win: BrowserWindow) {
+  return windowIDs.get(win)
+}
+
+export function getLastFocusedWindow() {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) return focused
+  const win = registry.lastFocused()
+  if (!win || win.isDestroyed()) return null
+  return win
+}
+
+export function restoreMainWindows() {
+  const ids = registry.persisted()
+  return (ids.length ? ids : [randomUUID()]).map((id) => createMainWindow(id))
+}
+
 export function setDockIcon() {
   if (process.platform !== "darwin") return
   const icon = nativeImage.createFromPath(join(iconsDir(), "dock.png"))
   if (!icon.isEmpty()) app.dock?.setIcon(icon)
 }
 
-export function createMainWindow() {
+export function createMainWindow(id: string = randomUUID()) {
   const state = windowState({
+    file: windowStateFile(id),
     defaultWidth: 1280,
     defaultHeight: 800,
   })
@@ -149,7 +194,7 @@ export function createMainWindow() {
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
-          trafficLightPosition: { x: 12, y: 14 },
+          trafficLightPosition: { x: 14, y: 14 },
         }
       : {}),
     ...(process.platform === "win32"
@@ -168,9 +213,10 @@ export function createMainWindow() {
   })
 
   initializeRendererSession(win.webContents.session)
-  wireWindowRecovery(win, "main")
+  wireWindowRecovery(win, id)
 
   state.manage(win)
+  registerWindow(win, id)
   loadWindow(win, "index.html")
   wireZoom(win)
 
@@ -180,6 +226,27 @@ export function createMainWindow() {
   })
 
   return win
+}
+
+function registerWindow(win: BrowserWindow, id: string) {
+  windowIDs.set(win, id)
+  registry.register(id, win)
+
+  win.on("focus", () => registry.focused(id))
+  // Windows never emits before-quit on OS shutdown/logoff, but each window
+  // gets session-end before it closes; flag the quit so ids stay persisted.
+  win.on("session-end", () => registry.setQuitting())
+  win.on("closed", () => registry.closed(id))
+}
+
+function windowStateFile(id: string) {
+  return `window-state-${id.replace(/[^a-zA-Z0-9._-]/g, "-")}.json`
+}
+
+// Mirrors windowStorage() in packages/app/src/utils/persist.ts, which names
+// the per-window renderer store this window persists its tabs into.
+function windowDataFile(id: string) {
+  return `opencode.window.${id.replace(/[^a-zA-Z0-9._-]/g, "-")}.dat`
 }
 
 export function registerRendererProtocol() {
@@ -200,7 +267,10 @@ export function registerRendererProtocol() {
     }
 
     try {
-      const response = await net.fetch(pathToFileURL(file).toString())
+      const range = request.headers.get("range")
+      const response = await net.fetch(pathToFileURL(file).toString(), {
+        headers: range ? { range } : undefined,
+      })
       if (response.status >= 400) {
         writeLog(
           "protocol",
@@ -294,7 +364,7 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
         errorCode,
         errorDescription,
         validatedURL,
-        currentURL: win.webContents.getURL(),
+        currentURL: safeWindowURL(win),
         isMainFrame,
       },
       "error",
@@ -316,12 +386,7 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   })
   win.webContents.on("render-process-gone", (_event, details) => {
     sampler.stopAndFlush()
-    writeLog(
-      "window",
-      "renderer process gone",
-      { window: name, currentURL: win.webContents.getURL(), details },
-      "error",
-    )
+    writeLog("window", "renderer process gone", { window: name, currentURL: safeWindowURL(win), details }, "error")
     void show(
       "OpenCode window terminated unexpectedly",
       [`Window: ${name}`, `Reason: ${details.reason}`, `Code: ${details.exitCode ?? "<unknown>"}`].join("\n"),
@@ -329,12 +394,12 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     )
   })
   win.on("unresponsive", () => {
-    writeLog("window", "renderer unresponsive", { window: name, currentURL: win.webContents.getURL() }, "error")
+    writeLog("window", "renderer unresponsive", { window: name, currentURL: safeWindowURL(win) }, "error")
     sampler.start()
     void show("OpenCode is not responding", "You can relaunch the app, open the logs, or keep waiting.", true)
   })
   win.on("responsive", () => {
-    writeLog("window", "renderer responsive", { window: name, currentURL: win.webContents.getURL() }, "error")
+    writeLog("window", "renderer responsive", { window: name, currentURL: safeWindowURL(win) }, "error")
     sampler.stopAndFlush()
   })
   win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
