@@ -25,3 +25,7 @@ export function partitionDeepLinks(urls: string[]) {
     { current: [] as string[], newWindows: [] as string[][] },
   )
 }
+
+export function extractDeepLinks(argv: string[]) {
+  return argv.filter((arg) => arg.startsWith("opencode://"))
+}

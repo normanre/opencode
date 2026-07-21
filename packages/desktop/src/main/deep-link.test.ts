@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { parseDeepLinkWindow, partitionDeepLinks } from "./deep-link"
+import { extractDeepLinks, parseDeepLinkWindow, partitionDeepLinks } from "./deep-link"
 
 describe("desktop deep links", () => {
   test("routes open-project window=new to a new window", () => {
@@ -23,5 +23,10 @@ describe("desktop deep links", () => {
       current: ["opencode://open-project?directory=/a", "opencode://new-session?directory=/c"],
       newWindows: [["opencode://open-project?directory=/b&window=new"]],
     })
+  })
+
+  test("extracts an encoded Windows project deep link from launch arguments", () => {
+    const url = "opencode://open-project?directory=C%3A%5CUsers%5CNorman%5C.dotfiles"
+    expect(extractDeepLinks(["electron.exe", "C:\\app\\index.js", url])).toEqual([url])
   })
 })

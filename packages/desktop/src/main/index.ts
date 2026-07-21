@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
 import { app } from "electron"
@@ -15,7 +15,7 @@ import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
-import { partitionDeepLinks } from "./deep-link"
+import { extractDeepLinks, partitionDeepLinks } from "./deep-link"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
@@ -208,10 +208,12 @@ const main = Effect.gen(function* () {
     return
   }
 
+  pendingDeepLinks.push(...extractDeepLinks(process.argv))
+
   preferAppEnv(app.getPath("userData"))
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
-    const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))
+    const urls = extractDeepLinks(argv)
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls })
       const partitioned = partitionDeepLinks(urls)
@@ -281,7 +283,11 @@ const main = Effect.gen(function* () {
       }),
     ),
   )
-  app.setAsDefaultProtocolClient("opencode")
+  if (process.defaultApp && process.argv[1]) {
+    app.setAsDefaultProtocolClient("opencode", process.execPath, [resolve(process.argv[1])])
+  } else {
+    app.setAsDefaultProtocolClient("opencode")
+  }
   registerRendererProtocol()
   setDockIcon()
   const updater = setupAutoUpdater(stopSidecars)
