@@ -2259,7 +2259,7 @@ export default function LegacyLayout(props: ParentProps) {
       aimMove={aim.move}
       projects={projects}
       renderProject={(project) => (
-        <SortableProject ctx={projectSidebarCtx} project={project} sortNow={sortNow} mobile={mobile} />
+        <SortableProject ctx={projectSidebarCtx} project={project()} sortNow={sortNow} mobile={mobile} />
       )}
       handleDragStart={handleDragStart}
       handleDragEnd={handleDragEnd}
