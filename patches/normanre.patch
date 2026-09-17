@@ -1,0 +1,1590 @@
+diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
+index 0c950871a3..78372f3858 100644
+--- a/packages/app/src/app.tsx
++++ b/packages/app/src/app.tsx
+@@ -59,6 +59,7 @@ import { SDKProvider, useSDK } from "@/context/sdk"
+ import { WslServersProvider } from "@/wsl/context"
+ import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
+ import LegacyLayout from "@/pages/layout"
++import { DesktopDeepLinks } from "@/pages/layout/desktop-deep-links"
+ import NewLayout from "@/pages/layout-new"
+ import { ErrorPage } from "./pages/error"
+ import { useCheckServerHealth } from "./utils/server-health"
+@@ -175,9 +176,12 @@ function SelectedServerProviders(props: ParentProps) {
+ }
+ 
+ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>) {
++  const settings = useSettings()
+   return (
+     <SelectedServerProviders>
+-      <LegacyServerScopedShell serverScoped={props.serverScoped}>{props.children}</LegacyServerScopedShell>
++      <LegacyServerScopedShell serverScoped={props.serverScoped} deepLinks={!settings.general.newLayoutDesigns()}>
++        {props.children}
++      </LegacyServerScopedShell>
+     </SelectedServerProviders>
+   )
+ }
+@@ -329,6 +333,17 @@ function DesktopCommands() {
+ 
+   command.register("desktop", () => {
+     const commands: CommandOption[] = []
++    if (platform.platform === "desktop" && platform.runDesktopMenuAction) {
++      commands.push({
++        id: "window.new",
++        title: language.t("command.window.new"),
++        category: language.t("command.category.file"),
++        keybind: "mod+shift+n",
++        onSelect: () => {
++          void platform.runDesktopMenuAction?.("window.new")
++        },
++      })
++    }
+     if (platform.platform === "desktop" && platform.exportDebugLogs) {
+       commands.push({
+         id: "logs.export",
+@@ -349,11 +364,14 @@ function DesktopCommands() {
+ type ServerScopedShellProps = ParentProps<{
+   directory?: () => string | undefined
+   serverScoped?: JSX.Element
++  deepLinks?: boolean
+ }>
+ 
+ function ServerScopedProviders(props: ServerScopedShellProps) {
++  const server = useServer()
+   return (
+     <LayoutProvider>
++      {props.deepLinks && server.isLocal() && <DesktopDeepLinks />}
+       {props.serverScoped}
+       <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
+     </LayoutProvider>
+@@ -362,7 +380,7 @@ function ServerScopedProviders(props: ServerScopedShellProps) {
+ 
+ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+   return (
+-    <ServerScopedProviders directory={props.directory} serverScoped={props.serverScoped}>
++    <ServerScopedProviders directory={props.directory} serverScoped={props.serverScoped} deepLinks={props.deepLinks}>
+       <LegacyLayout>{props.children}</LegacyLayout>
+     </ServerScopedProviders>
+   )
+@@ -371,7 +389,7 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+ function NewAppLayout(props: ParentProps<{ serverScoped?: JSX.Element }>) {
+   return (
+     <SelectedServerProviders>
+-      <ServerScopedProviders serverScoped={props.serverScoped}>
++      <ServerScopedProviders serverScoped={props.serverScoped} deepLinks>
+         <NewLayout>{props.children}</NewLayout>
+       </ServerScopedProviders>
+     </SelectedServerProviders>
+diff --git a/packages/app/src/components/settings-general.tsx b/packages/app/src/components/settings-general.tsx
+index 8adaa1f0fd..4fe802910b 100644
+--- a/packages/app/src/components/settings-general.tsx
++++ b/packages/app/src/components/settings-general.tsx
+@@ -221,6 +221,7 @@ export const SettingsGeneral: Component = () => {
+   const mono = () => monoInput(settings.appearance.font())
+   const sans = () => sansInput(settings.appearance.uiFont())
+   const terminal = () => terminalInput(settings.appearance.terminalFont())
++  const terminalColor = () => settings.appearance.terminalColor() || (theme.mode() === "dark" ? "#191515" : "#fcfcfc")
+ 
+   const soundSelectProps = (
+     enabled: () => boolean,
+@@ -347,6 +348,18 @@ export const SettingsGeneral: Component = () => {
+           />
+         </SettingsRow>
+ 
++        <SettingsRow
++          title={language.t("settings.general.row.powershellProfile.title")}
++          description={language.t("settings.general.row.powershellProfile.description")}
++        >
++          <div data-action="settings-powershell-profile">
++            <Switch
++              checked={serverSync().data.config.powershell_profile ?? true}
++              onChange={(checked) => serverSync().updateConfig({ powershell_profile: checked })}
++            />
++          </div>
++        </SettingsRow>
++
+         <SettingsRow
+           title={language.t("settings.general.row.reasoningSummaries.title")}
+           description={language.t("settings.general.row.reasoningSummaries.description")}
+@@ -570,6 +583,29 @@ export const SettingsGeneral: Component = () => {
+             />
+           </div>
+         </SettingsRow>
++
++        <SettingsRow
++          title={language.t("settings.general.row.terminalColor.title")}
++          description={language.t("settings.general.row.terminalColor.description")}
++        >
++          <div class="flex items-center gap-2">
++            <input
++              data-action="settings-terminal-color"
++              aria-label={language.t("settings.general.row.terminalColor.title")}
++              type="color"
++              value={terminalColor()}
++              onInput={(event) => settings.appearance.setTerminalColor(event.currentTarget.value)}
++              class="h-8 w-12 cursor-pointer rounded border border-border-weak-base bg-transparent p-1"
++            />
++            <Button
++              variant="secondary"
++              size="small"
++              onClick={() => settings.appearance.setTerminalColor("")}
++            >
++              {language.t("common.default")}
++            </Button>
++          </div>
++        </SettingsRow>
+       </SettingsList>
+     </div>
+   )
+diff --git a/packages/app/src/components/settings-v2/general.tsx b/packages/app/src/components/settings-v2/general.tsx
+index b41da107ed..f6b8b62d01 100644
+--- a/packages/app/src/components/settings-v2/general.tsx
++++ b/packages/app/src/components/settings-v2/general.tsx
+@@ -9,6 +9,8 @@ import { useLanguage } from "@/context/language"
+ import { usePlatform } from "@/context/platform"
+ import { useUpdaterAction } from "../updater-action"
+ import { useSettings } from "@/context/settings"
++import { useServerSync } from "@/context/server-sync"
++import { useTheme } from "@opencode-ai/ui/theme/context"
+ import { ExternalLink } from "../external-link"
+ import { SettingsListV2 } from "./parts/list"
+ import { SettingsRowV2 } from "./parts/row"
+@@ -278,6 +280,8 @@ export const SettingsGeneralV2: Component<{
+   const platform = usePlatform()
+   const dialog = useDialog()
+   const settings = useSettings()
++  const serverSync = useServerSync()
++  const theme = useTheme()
+   const mobile = createMediaQuery("(max-width: 767px)")
+   const updater = useUpdaterAction()
+   const permissionScope = createPermissionScopeController(() => props.sessionID)
+@@ -333,6 +337,37 @@ export const SettingsGeneralV2: Component<{
+ 
+         <ShellSetting controller={shell} />
+ 
++        <SettingsRowV2
++          title={language.t("settings.general.row.terminalColor.title")}
++          description={language.t("settings.general.row.terminalColor.description")}
++        >
++          <div class="flex items-center gap-2">
++            <input
++              data-action="settings-terminal-color"
++              aria-label={language.t("settings.general.row.terminalColor.title")}
++              type="color"
++              value={settings.appearance.terminalColor() || (theme.mode() === "dark" ? "#191515" : "#fcfcfc")}
++              onInput={(event) => settings.appearance.setTerminalColor(event.currentTarget.value)}
++              class="h-8 w-12 cursor-pointer rounded border border-border-weak-base bg-transparent p-1"
++            />
++            <ButtonV2 size="small" variant="ghost-muted" onClick={() => settings.appearance.setTerminalColor("")}>
++              {language.t("common.default")}
++            </ButtonV2>
++          </div>
++        </SettingsRowV2>
++
++        <SettingsRowV2
++          title={language.t("settings.general.row.powershellProfile.title")}
++          description={language.t("settings.general.row.powershellProfile.description")}
++        >
++          <div data-action="settings-powershell-profile">
++            <Switch
++              checked={serverSync().data.config.powershell_profile ?? true}
++              onChange={(checked) => serverSync().updateConfig({ powershell_profile: checked })}
++            />
++          </div>
++        </SettingsRowV2>
++
+         <SettingsRowV2
+           title={language.t("settings.general.row.reasoningSummaries.title")}
+           description={language.t("settings.general.row.reasoningSummaries.description")}
+diff --git a/packages/app/src/components/terminal.tsx b/packages/app/src/components/terminal.tsx
+index 0ca42b35bb..c1b6324f1d 100644
+--- a/packages/app/src/components/terminal.tsx
++++ b/packages/app/src/components/terminal.tsx
+@@ -265,10 +265,13 @@ export const Terminal = (props: TerminalProps) => {
+   const getTerminalColors = (): TerminalColors => {
+     const mode = theme.mode() === "dark" ? "dark" : "light"
+     const fallback = DEFAULT_TERMINAL_COLORS[mode]
++    const customBackground = settings.appearance.terminalColor()
+     const currentTheme = theme.themes()[theme.themeId()]
+-    if (!currentTheme) return fallback
++    if (!currentTheme) return customBackground ? { ...fallback, background: customBackground } : fallback
+     const variant = mode === "dark" ? currentTheme.dark : currentTheme.light
+-    if (!variant?.seeds && !variant?.palette) return fallback
++    if (!variant?.seeds && !variant?.palette) {
++      return customBackground ? { ...fallback, background: customBackground } : fallback
++    }
+     const resolved = resolveThemeVariant(variant, mode === "dark")
+     const text = resolved["text-stronger"] ?? fallback.foreground
+     const background = settings.general.newLayoutDesigns()
+@@ -279,7 +282,7 @@ export const Terminal = (props: TerminalProps) => {
+     const base = text.startsWith("#") ? (text as HexColor) : (fallback.foreground as HexColor)
+     const selectionBackground = withAlpha(base, alpha)
+     return {
+-      background,
++      background: customBackground || background,
+       foreground: text,
+       cursor: text,
+       selectionBackground,
+diff --git a/packages/app/src/context/notification.tsx b/packages/app/src/context/notification.tsx
+index 799c4713dd..69bccb9885 100644
+--- a/packages/app/src/context/notification.tsx
++++ b/packages/app/src/context/notification.tsx
+@@ -342,24 +342,29 @@ function createServerNotificationState(input: {
+       if (!session) return
+       if (session.parentID) return
+ 
+-      if (settings.sounds.agentEnabled()) {
+-        void playSoundById(settings.sounds.agent())
+-      }
++      const claimID = `session.idle:${directory}:${sessionID}:${session.version}`
++      void Promise.resolve(platform.claimNotification?.(claimID)).then((claimed) => {
++        if (claimed === false || meta.disposed) return
++
++        if (settings.sounds.agentEnabled()) {
++          void playSoundById(settings.sounds.agent())
++        }
++
++        append({
++          directory,
++          time,
++          viewed: viewedInCurrentSession(directory, sessionID),
++          type: "turn-complete",
++          session: sessionID,
++        })
+ 
+-      append({
+-        directory,
+-        time,
+-        viewed: viewedInCurrentSession(directory, sessionID),
+-        type: "turn-complete",
+-        session: sessionID,
++        const href = `/${base64Encode(directory)}/session/${sessionID}`
++        if (settings.notifications.agent()) {
++          void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, () =>
++            input.navigate(href),
++          )
++        }
+       })
+-
+-      const href = `/${base64Encode(directory)}/session/${sessionID}`
+-      if (settings.notifications.agent()) {
+-        void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, () =>
+-          input.navigate(href),
+-        )
+-      }
+     })
+   }
+ 
+@@ -373,26 +378,31 @@ function createServerNotificationState(input: {
+       if (meta.disposed) return
+       if (session?.parentID) return
+ 
+-      if (settings.sounds.errorsEnabled()) {
+-        void playSoundById(settings.sounds.errors())
+-      }
+-
+-      const error = "error" in event.properties ? event.properties.error : undefined
+-      append({
+-        directory,
+-        time,
+-        viewed: viewedInCurrentSession(directory, sessionID),
+-        type: "error",
+-        session: sessionID ?? "global",
+-        error,
++      const claimID = `session.error:${directory}:${sessionID ?? "global"}:${JSON.stringify(event.properties.error)}`
++      void Promise.resolve(platform.claimNotification?.(claimID)).then((claimed) => {
++        if (claimed === false || meta.disposed) return
++
++        if (settings.sounds.errorsEnabled()) {
++          void playSoundById(settings.sounds.errors())
++        }
++
++        const error = "error" in event.properties ? event.properties.error : undefined
++        append({
++          directory,
++          time,
++          viewed: viewedInCurrentSession(directory, sessionID),
++          type: "error",
++          session: sessionID ?? "global",
++          error,
++        })
++        const description =
++          session?.title ??
++          (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
++        const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
++        if (settings.notifications.errors()) {
++          void platform.notify(language.t("notification.session.error.title"), description, () => input.navigate(href))
++        }
+       })
+-      const description =
+-        session?.title ??
+-        (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
+-      const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
+-      if (settings.notifications.errors()) {
+-        void platform.notify(language.t("notification.session.error.title"), description, () => input.navigate(href))
+-      }
+     })
+   }
+ 
+diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
+index 0408b233ff..0a466c489b 100644
+--- a/packages/app/src/context/platform.tsx
++++ b/packages/app/src/context/platform.tsx
+@@ -50,6 +50,9 @@ type PlatformBase = {
+   /** Send a system notification */
+   notify(title: string, description?: string, onClick?: () => void): Promise<void>
+ 
++  /** Claim a notification so only one window handles it */
++  claimNotification?(id: string): Promise<boolean>
++
+   /** Open a native attachment picker and read selected files sequentially (desktop only) */
+   openAttachmentPickerDialog?(
+     opts: OpenAttachmentPickerOptions,
+diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
+index 1a118b6544..00398ba48f 100644
+--- a/packages/app/src/context/settings.tsx
++++ b/packages/app/src/context/settings.tsx
+@@ -45,6 +45,7 @@ export interface Settings {
+     mono: string
+     sans: string
+     terminal: string
++    terminalColor: string
+   }
+   keybinds: Record<string, string>
+   permissions: {
+@@ -180,6 +181,12 @@ export function terminalFontFamily(font: string | undefined) {
+   return stack(font, terminalBase)
+ }
+ 
++function color(value: string | undefined) {
++  if (!value) return ""
++  const trimmed = value.trim()
++  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : ""
++}
++
+ const defaultSettings: Settings = {
+   general: {
+     autoSave: true,
+@@ -201,6 +208,7 @@ const defaultSettings: Settings = {
+     mono: "",
+     sans: "",
+     terminal: "",
++    terminalColor: "",
+   },
+   keybinds: {},
+   permissions: {
+@@ -475,6 +483,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+         setTerminalFont(value: string) {
+           setStore("appearance", "terminal", value.trim() ? value : "")
+         },
++        terminalColor: withFallback(() => color(store.appearance?.terminalColor), defaultSettings.appearance.terminalColor),
++        setTerminalColor(value: string) {
++          setStore("appearance", "terminalColor", color(value))
++        },
+       },
+       keybinds: {
+         get: (action: string) => store.keybinds?.[action],
+diff --git a/packages/app/src/desktop-menu.ts b/packages/app/src/desktop-menu.ts
+index bbddbea169..da85da0619 100644
+--- a/packages/app/src/desktop-menu.ts
++++ b/packages/app/src/desktop-menu.ts
+@@ -1,6 +1,6 @@
+ import type { DesktopNativeKey } from "./i18n/desktop-native"
+ 
+-export type DesktopMenuPlatform = "macos" | "windows"
++export type DesktopMenuPlatform = "macos" | "windows" | "linux"
+ 
+ export type DesktopMenuAction =
+   | "app.checkForUpdates"
+@@ -123,7 +123,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
+         type: "item",
+         labelKey: "desktop.menu.newWindow",
+         action: "window.new",
+-        accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N" },
++        accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N", linux: "Ctrl+Shift+N" },
+       },
+       { type: "separator" },
+       { type: "item", labelKey: "desktop.menu.closeWindow", action: "window.close", role: "close" },
+diff --git a/packages/app/src/i18n/en.ts b/packages/app/src/i18n/en.ts
+index 62d4dc1ae6..7f98f9d0ce 100644
+--- a/packages/app/src/i18n/en.ts
++++ b/packages/app/src/i18n/en.ts
+@@ -33,6 +33,7 @@ export const dict = {
+   "command.provider.connect": "Connect provider",
+   "command.server.switch": "Switch server",
+   "command.settings.open": "Open settings",
++  "command.window.new": "New window",
+   "command.session.previous": "Previous session",
+   "command.session.next": "Next session",
+   "command.session.previous.unseen": "Previous unread session",
+@@ -911,6 +912,9 @@ export const dict = {
+   "settings.general.row.shell.description": "Shell used by the terminal and agent tools",
+   "settings.general.row.shell.autoDefault": "Auto (Default)",
+   "settings.general.row.shell.terminalOnly": "terminal only",
++  "settings.general.row.powershellProfile.title": "PowerShell profile",
++  "settings.general.row.powershellProfile.description":
++    "Load PowerShell profile files before running shell commands on Windows.",
+   "settings.general.row.appearance.title": "Appearance",
+   "settings.general.row.appearance.description": "Customise how OpenCode looks on your device",
+   "settings.general.row.colorScheme.title": "Color scheme",
+@@ -921,6 +925,8 @@ export const dict = {
+   "settings.general.row.font.description": "Customise the font used in code blocks",
+   "settings.general.row.terminalFont.title": "Terminal Font",
+   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
++  "settings.general.row.terminalColor.title": "Terminal Color",
++  "settings.general.row.terminalColor.description": "Override the integrated terminal background color only",
+   "settings.general.row.uiFont.title": "UI Font",
+   "settings.general.row.uiFont.description": "Customise the font used throughout the interface",
+   "settings.general.row.followup.title": "Follow-up behavior",
+diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
+index 98548ab233..395a469706 100644
+--- a/packages/app/src/pages/layout.tsx
++++ b/packages/app/src/pages/layout.tsx
+@@ -45,8 +45,6 @@ import { retry } from "@opencode-ai/core/util/retry"
+ import { playSoundById } from "@/utils/sound"
+ import { createAim } from "@/utils/aim"
+ import { Worktree as WorktreeState } from "@/utils/worktree"
+-import { setSessionHandoff } from "@/pages/session/handoff"
+-import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
+ import { listAllSessions } from "@/utils/session"
+ 
+ import { useDialog } from "@opencode-ai/ui/context/dialog"
+@@ -67,12 +65,6 @@ import {
+   latestRootSession,
+   sortedRootSessions,
+ } from "./layout/helpers"
+-import {
+-  collectNewSessionDeepLinks,
+-  collectOpenProjectDeepLinks,
+-  deepLinkEvent,
+-  drainPendingDeepLinks,
+-} from "./layout/deep-links"
+ import { createInlineEditorController } from "./layout/inline-editor"
+ import {
+   LocalWorkspace,
+@@ -386,7 +378,7 @@ export default function LegacyLayout(props: ParentProps) {
+         alertedAtBySession.delete(sessionKey)
+       }
+ 
+-      const unsub = serverSDK().event.listen((e) => {
++      const unsub = serverSDK().event.listen(async (e) => {
+         if (e.details?.type === "worktree.ready") {
+           setBusy(e.name, false)
+           WorktreeState.ready(serverSDK().scope, e.name)
+@@ -436,6 +428,8 @@ export default function LegacyLayout(props: ParentProps) {
+             : language.t("notification.question.description", { sessionTitle, projectName })
+         const href = `/${base64Encode(directory)}/session/${props.sessionID}`
+ 
++        if ((await platform.claimNotification?.(`${e.name}:${props.id}`)) === false) return
++
+         const now = Date.now()
+         const lastAlerted = alertedAtBySession.get(sessionKey) ?? 0
+         if (now - lastAlerted < cooldownMs) return
+@@ -1249,38 +1243,6 @@ export default function LegacyLayout(props: ParentProps) {
+     if (navigate) return navigateToProject(directory)
+   }
+ 
+-  const handleDeepLinks = (urls: string[]) => {
+-    if (!server.isLocal()) return
+-
+-    for (const directory of collectOpenProjectDeepLinks(urls)) {
+-      void openProject(directory)
+-    }
+-
+-    for (const link of collectNewSessionDeepLinks(urls)) {
+-      void openProject(link.directory, false)
+-      const slug = base64Encode(link.directory)
+-      if (link.prompt) {
+-        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(slug)), {
+-          prompt: link.prompt,
+-        })
+-      }
+-      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
+-      navigateWithSidebarReset(href)
+-    }
+-  }
+-
+-  onMount(() => {
+-    const handler = (event: Event) => {
+-      const detail = (event as CustomEvent<{ urls: string[] }>).detail
+-      const urls = detail?.urls ?? []
+-      if (urls.length === 0) return
+-      handleDeepLinks(urls)
+-    }
+-
+-    handleDeepLinks(drainPendingDeepLinks(window))
+-    makeEventListener(window, deepLinkEvent, handler as EventListener)
+-  })
+-
+   async function renameProject(project: LocalProject, next: string) {
+     const current = displayName(project)
+     if (next === current) return
+diff --git a/packages/app/src/pages/layout/deep-links.ts b/packages/app/src/pages/layout/deep-links.ts
+index 5dca421f74..128d9b7108 100644
+--- a/packages/app/src/pages/layout/deep-links.ts
++++ b/packages/app/src/pages/layout/deep-links.ts
+@@ -36,7 +36,7 @@ export const collectOpenProjectDeepLinks = (urls: string[]) =>
+ export const collectNewSessionDeepLinks = (urls: string[]) =>
+   urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
+ 
+-type OpenCodeWindow = Window & {
++type OpenCodeWindow = EventTarget & {
+   __OPENCODE__?: {
+     deepLinks?: string[]
+   }
+@@ -48,3 +48,13 @@ export const drainPendingDeepLinks = (target: OpenCodeWindow) => {
+   if (target.__OPENCODE__) target.__OPENCODE__.deepLinks = []
+   return pending
+ }
++
++export const listenForDeepLinks = (target: OpenCodeWindow, handler: (urls: string[]) => void) => {
++  const drain = () => {
++    const urls = drainPendingDeepLinks(target)
++    if (urls.length > 0) handler(urls)
++  }
++  drain()
++  target.addEventListener(deepLinkEvent, drain)
++  return () => target.removeEventListener(deepLinkEvent, drain)
++}
+diff --git a/packages/app/src/pages/layout/helpers.test.ts b/packages/app/src/pages/layout/helpers.test.ts
+index cb58b6f8b6..5b29f6cea4 100644
+--- a/packages/app/src/pages/layout/helpers.test.ts
++++ b/packages/app/src/pages/layout/helpers.test.ts
+@@ -3,6 +3,7 @@ import {
+   collectNewSessionDeepLinks,
+   collectOpenProjectDeepLinks,
+   drainPendingDeepLinks,
++  listenForDeepLinks,
+   parseDeepLink,
+   parseNewSessionDeepLink,
+ } from "./deep-links"
+@@ -110,6 +111,22 @@ describe("layout deep links", () => {
+     expect(drainPendingDeepLinks(target)).toEqual(["opencode://open-project?directory=/a"])
+     expect(drainPendingDeepLinks(target)).toEqual([])
+   })
++
++  test("listens for startup and live deep links without replaying them", () => {
++    const startup = "opencode://open-project?directory=/startup"
++    const live = "opencode://open-project?directory=/live"
++    const target = new EventTarget() as Window & { __OPENCODE__?: { deepLinks?: string[] } }
++    target.__OPENCODE__ = { deepLinks: [startup] }
++    const received: string[][] = []
++
++    const cleanup = listenForDeepLinks(target, (urls) => received.push(urls))
++    target.__OPENCODE__.deepLinks = [live]
++    target.dispatchEvent(new CustomEvent("opencode:deep-link", { detail: { urls: [live] } }))
++    cleanup()
++
++    expect(received).toEqual([[startup], [live]])
++    expect(drainPendingDeepLinks(target)).toEqual([])
++  })
+ })
+ 
+ describe("layout workspace helpers", () => {
+diff --git a/packages/core/src/config.ts b/packages/core/src/config.ts
+index c76486968b..6bf91eee98 100644
+--- a/packages/core/src/config.ts
++++ b/packages/core/src/config.ts
+@@ -33,6 +33,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
+   shell: Schema.String.pipe(Schema.optional).annotate({
+     description: "Default shell to use for terminal and shell tool execution",
+   }),
++  powershell_profile: Schema.Boolean.pipe(Schema.optional).annotate({
++    description: "Load PowerShell profile files before running shell commands on Windows",
++  }),
+   model: Schema.String.pipe(Schema.optional).annotate({
+     description: "Default model to use when no session or agent model is selected",
+   }),
+diff --git a/packages/core/src/shell.ts b/packages/core/src/shell.ts
+index 29089106d9..2e91fcec76 100644
+--- a/packages/core/src/shell.ts
++++ b/packages/core/src/shell.ts
+@@ -163,7 +163,7 @@ function info(file: string): Item {
+   }
+ }
+ 
+-export function args(file: string, command: string, cwd: string) {
++export function args(file: string, command: string, cwd: string, profile = true) {
+   const n = name(file)
+   if (n === "nu" || n === "fish") return ["-c", command]
+   if (n === "zsh") {
+@@ -195,7 +195,7 @@ export function args(file: string, command: string, cwd: string) {
+     ]
+   }
+   if (n === "cmd") return ["/c", command]
+-  if (ps(file)) return ["-NoProfile", "-Command", command]
++  if (ps(file)) return profile ? ["-Command", command] : ["-NoProfile", "-Command", command]
+   return ["-c", command]
+ }
+ 
+diff --git a/packages/core/src/v1/config/config.ts b/packages/core/src/v1/config/config.ts
+index 7ebb4b69b0..697f155168 100644
+--- a/packages/core/src/v1/config/config.ts
++++ b/packages/core/src/v1/config/config.ts
+@@ -34,6 +34,9 @@ export const Info = Schema.Struct({
+     description: "JSON schema reference for configuration validation",
+   }),
+   shell: Schema.optional(Schema.String).annotate({ description: "Default shell to use for terminal and bash tool" }),
++  powershell_profile: Schema.optional(Schema.Boolean).annotate({
++    description: "Load PowerShell profile files before running shell commands on Windows",
++  }),
+   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),
+   server: Schema.optional(ConfigServerV1.Server).annotate({
+     description: "Server configuration for opencode serve and web commands",
+diff --git a/packages/core/src/v1/config/migrate.ts b/packages/core/src/v1/config/migrate.ts
+index ebe1b905ff..e902e38490 100644
+--- a/packages/core/src/v1/config/migrate.ts
++++ b/packages/core/src/v1/config/migrate.ts
+@@ -36,6 +36,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
+   return {
+     $schema: info.$schema,
+     shell: info.shell,
++    powershell_profile: info.powershell_profile,
+     model: info.model,
+     default_agent: info.default_agent,
+     autoupdate: info.autoupdate,
+diff --git a/packages/core/test/config/config.test.ts b/packages/core/test/config/config.test.ts
+index c3c42cab30..17befcf3c4 100644
+--- a/packages/core/test/config/config.test.ts
++++ b/packages/core/test/config/config.test.ts
+@@ -115,6 +115,12 @@ describe("Config", () => {
+     }),
+   )
+ 
++  it.effect("migrates v1 PowerShell profile setting", () =>
++    Effect.sync(() => {
++      expect(ConfigMigrateV1.migrate({ shell: "pwsh", powershell_profile: false }).powershell_profile).toBe(false)
++    }),
++  )
++
+   it.effect("migrates v1 command configuration", () =>
+     Effect.sync(() => {
+       expect(
+diff --git a/packages/core/test/shell.test.ts b/packages/core/test/shell.test.ts
+index 1cc47a79f6..4c41ea4260 100644
+--- a/packages/core/test/shell.test.ts
++++ b/packages/core/test/shell.test.ts
+@@ -40,6 +40,14 @@ describe("shell", () => {
+     expect(Shell.posix("C:/tools/pwsh.exe")).toBe(false)
+   })
+ 
++  test("powerShell shells load profile by default", () => {
++    expect(Shell.args("pwsh", "echo hi", "/tmp")).toEqual(["-Command", "echo hi"])
++  })
++
++  test("powerShell shells can disable profile loading", () => {
++    expect(Shell.args("pwsh", "echo hi", "/tmp", false)).toEqual(["-NoProfile", "-Command", "echo hi"])
++  })
++
+   test("falls back when configured shell cannot be resolved", async () => {
+     await withShell(undefined, async () => {
+       const preferred = Shell.preferred()
+diff --git a/packages/desktop/electron-builder.config.test.ts b/packages/desktop/electron-builder.config.test.ts
+index 3fb1adb6c1..aa3ddc83bb 100644
+--- a/packages/desktop/electron-builder.config.test.ts
++++ b/packages/desktop/electron-builder.config.test.ts
+@@ -21,6 +21,7 @@ for (const channel of channels) {
+     else process.env.OPENCODE_CHANNEL = previous
+ 
+     expect(config.appId).toBe(channel.appId)
++    expect(config.npmRebuild).toBe(false)
+     expect(config.extraMetadata?.desktopName).toBe(`${channel.appId}.desktop`)
+     expect(config.linux?.executableName).toBe(channel.appId)
+     expect(config.linux?.desktop?.entry?.StartupWMClass).toBe(channel.appId)
+diff --git a/packages/desktop/electron-builder.config.ts b/packages/desktop/electron-builder.config.ts
+index 508c0df5e9..14f9c71827 100644
+--- a/packages/desktop/electron-builder.config.ts
++++ b/packages/desktop/electron-builder.config.ts
+@@ -43,6 +43,8 @@ const APP_IDS = {
+ 
+ const getBase = (appId: string): Configuration => ({
+   artifactName: "opencode-desktop-${os}-${arch}.${ext}",
++  // Native modules use prebuilt artifacts; rebuilding also traverses platform-specific links from other workspaces.
++  npmRebuild: false,
+   directories: {
+     output: "dist",
+     buildResources: "resources",
+diff --git a/packages/desktop/src/main/desktop-menu-actions.ts b/packages/desktop/src/main/desktop-menu-actions.ts
+index aa15e05e27..f570e8ce1a 100644
+--- a/packages/desktop/src/main/desktop-menu-actions.ts
++++ b/packages/desktop/src/main/desktop-menu-actions.ts
+@@ -23,12 +23,15 @@ export function runDesktopMenuAction(
+       createMainWindow()
+       return
+     case "window.close":
++      if (win?.isDestroyed()) return
+       win?.close()
+       return
+     case "window.minimize":
++      if (win?.isDestroyed()) return
+       win?.minimize()
+       return
+     case "window.toggleMaximize":
++      if (win?.isDestroyed()) return
+       if (win?.isMaximized()) {
+         win.unmaximize()
+         return
+@@ -36,9 +39,11 @@ export function runDesktopMenuAction(
+       win?.maximize()
+       return
+     case "view.reload":
++      if (!canUseWindow(win)) return
+       win?.reload()
+       return
+     case "view.toggleDevTools":
++      if (!canUseWindow(win)) return
+       win?.webContents.toggleDevTools()
+       return
+     case "view.resetZoom":
+@@ -51,34 +56,46 @@ export function runDesktopMenuAction(
+       setZoom(win, (win?.webContents.getZoomFactor() ?? 1) - 0.2)
+       return
+     case "view.toggleFullscreen":
++      if (win?.isDestroyed()) return
+       win?.setFullScreen(!win.isFullScreen())
+       return
+     case "edit.undo":
++      if (!canUseWindow(win)) return
+       win?.webContents.undo()
+       return
+     case "edit.redo":
++      if (!canUseWindow(win)) return
+       win?.webContents.redo()
+       return
+     case "edit.cut":
++      if (!canUseWindow(win)) return
+       win?.webContents.cut()
+       return
+     case "edit.copy":
++      if (!canUseWindow(win)) return
+       win?.webContents.copy()
+       return
+     case "edit.paste":
++      if (!canUseWindow(win)) return
+       win?.webContents.paste()
+       return
+     case "edit.delete":
++      if (!canUseWindow(win)) return
+       win?.webContents.delete()
+       return
+     case "edit.selectAll":
++      if (!canUseWindow(win)) return
+       win?.webContents.selectAll()
+       return
+   }
+ }
+ 
++function canUseWindow(win: BrowserWindow | null): win is BrowserWindow {
++  return !!win && !win.isDestroyed() && !win.webContents.isDestroyed()
++}
++
+ function setZoom(win: BrowserWindow | null, value: number) {
+-  if (!win) return
++  if (!canUseWindow(win)) return
+   win.webContents.setZoomFactor(Math.min(Math.max(value, 0.2), 10))
+   updateTitlebar(win)
+ }
+diff --git a/packages/desktop/src/main/index.ts b/packages/desktop/src/main/index.ts
+index 183fc634db..dd62b34826 100644
+--- a/packages/desktop/src/main/index.ts
++++ b/packages/desktop/src/main/index.ts
+@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs"
+ import * as http from "node:http"
+ import { createServer } from "node:net"
+ import { homedir, tmpdir } from "node:os"
+-import { join } from "node:path"
++import { join, resolve } from "node:path"
+ import { getCACertificates, setDefaultCACertificates } from "node:tls"
+ import type { Event } from "electron"
+ import { app, BrowserWindow } from "electron"
+@@ -16,6 +16,7 @@ import { checkAppExists, resolveAppPath } from "./apps"
+ import { CHANNEL } from "./constants"
+ import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+ import { forwardInitializationFailure } from "./initialization"
++import { extractDeepLinks, partitionDeepLinks } from "./deep-link"
+ import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+ import { createMenu } from "./menu"
+ import {
+@@ -35,6 +36,7 @@ import { setupAutoUpdater, showUpdaterDialog } from "./updater"
+ import { safeWebContentsURL } from "./window-state"
+ import {
+   getLastFocusedWindow,
++  createMainWindow,
+   registerRendererProtocol,
+   setRelaunchHandler,
+   setAppQuitting,
+@@ -68,6 +70,7 @@ let logger: ReturnType<typeof initLogging>
+ let server: SidecarListener | null = null
+ 
+ const pendingDeepLinks: string[] = []
++let windowsReady = false
+ 
+ function useEnvProxy() {
+   try {
+@@ -80,9 +83,31 @@ function useEnvProxy() {
+ 
+ function emitDeepLinks(urls: string[]) {
+   if (urls.length === 0) return
+-  pendingDeepLinks.push(...urls)
+   const win = getLastFocusedWindow()
+-  if (win) sendDeepLinks(win, urls)
++  if (!win) {
++    pendingDeepLinks.push(...urls)
++    return
++  }
++  sendDeepLinksWhenReady(win, urls)
++}
++
++function openMainWindow(urls: string[] = []) {
++  return createMainWindow(undefined, urls.length > 0 ? (win) => sendDeepLinks(win, urls) : undefined)
++}
++
++function sendDeepLinksWhenReady(win: BrowserWindow, urls: string[]) {
++  if (win.webContents.isLoadingMainFrame()) {
++    win.webContents.once("did-finish-load", () => sendDeepLinks(win, urls))
++    return
++  }
++  sendDeepLinks(win, urls)
++}
++
++function dispatchDeepLinks(urls: string[]) {
++  const partitioned = partitionDeepLinks(urls)
++  emitDeepLinks(partitioned.current)
++  partitioned.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
++  return partitioned.newWindows.length > 0 && partitioned.current.length === 0
+ }
+ 
+ async function killSidecar() {
+@@ -201,12 +226,14 @@ const main = Effect.gen(function* () {
+   }
+ 
+   const shellEnv = preferAppEnv(app.getPath("userData"))
++  pendingDeepLinks.push(...extractDeepLinks(process.argv))
+ 
+   app.on("second-instance", (_event: Event, argv: string[]) => {
+-    const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))
++    const urls = extractDeepLinks(argv)
+     if (urls.length) {
+       logger.log("deep link received via second-instance", { urls })
+-      emitDeepLinks(urls)
++      if (!windowsReady) pendingDeepLinks.push(...urls)
++      else if (dispatchDeepLinks(urls)) return
+     }
+     const win = getLastFocusedWindow()
+     if (win) {
+@@ -218,7 +245,11 @@ const main = Effect.gen(function* () {
+   app.on("open-url", (event: Event, url: string) => {
+     event.preventDefault()
+     logger.log("deep link received via open-url", { url })
+-    emitDeepLinks([url])
++    if (!windowsReady) {
++      pendingDeepLinks.push(url)
++      return
++    }
++    dispatchDeepLinks([url])
+   })
+ 
+   app.on("before-quit", () => {
+@@ -268,7 +299,11 @@ const main = Effect.gen(function* () {
+       }),
+     ),
+   )
+-  app.setAsDefaultProtocolClient("opencode")
++  if (process.defaultApp && process.argv[1]) {
++    app.setAsDefaultProtocolClient("opencode", process.execPath, [resolve(process.argv[1])])
++  } else {
++    app.setAsDefaultProtocolClient("opencode")
++  }
+   registerRendererProtocol()
+   setDockIcon()
+   const updater = setupAutoUpdater(stopSidecars)
+@@ -292,7 +327,6 @@ const main = Effect.gen(function* () {
+       },
+       (e) => Effect.runPromise(e),
+     ),
+-    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+     getDefaultServerUrl: () => getDefaultServerUrl(),
+     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
+     isFirstLaunchOnboardingPending,
+@@ -419,6 +453,10 @@ const main = Effect.gen(function* () {
+ 
+   const windows = restoreMainWindows()
+   if (windows.length) createMenu(menuDeps)
++  windowsReady = true
++  const initialDeepLinks = partitionDeepLinks(pendingDeepLinks.splice(0))
++  if (initialDeepLinks.current.length > 0 && windows[0]) sendDeepLinksWhenReady(windows[0], initialDeepLinks.current)
++  initialDeepLinks.newWindows.forEach((deepLinks) => openMainWindow(deepLinks))
+ })
+ 
+ Effect.runFork(main)
+diff --git a/packages/desktop/src/main/ipc.ts b/packages/desktop/src/main/ipc.ts
+index d8abfc1ceb..dca9a8c2b1 100644
+--- a/packages/desktop/src/main/ipc.ts
++++ b/packages/desktop/src/main/ipc.ts
+@@ -25,6 +25,9 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
+ import { createDesktopDraftStore } from "./draft-store"
+ import { nativeT } from "./native-translations"
+ 
++const notificationClaims = new Set<string>()
++const notificationClaimTtl = 1000 * 5
++
+ const pickerFilters = (ext?: string[]) => {
+   if (!ext || ext.length === 0) return undefined
+   return [{ name: nativeT("desktop.dialog.files"), extensions: ext }]
+@@ -36,7 +39,6 @@ type Deps = {
+   killSidecar: () => Promise<void> | void
+   relaunch: () => void
+   awaitInitialization: () => Promise<ServerReadyData>
+-  consumeInitialDeepLinks: () => Promise<string[]> | string[]
+   getDefaultServerUrl: () => Promise<string | null> | string | null
+   setDefaultServerUrl: (url: string | null) => Promise<void> | void
+   isFirstLaunchOnboardingPending: () => Promise<boolean> | boolean
+@@ -64,7 +66,6 @@ export function registerIpcHandlers(deps: Deps) {
+ 
+   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
+-  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
+   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
+   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
+     deps.setDefaultServerUrl(url),
+@@ -251,6 +252,15 @@ export function registerIpcHandlers(deps: Deps) {
+     return id
+   })
+ 
++  ipcMain.handle("claim-notification", (_event: IpcMainInvokeEvent, id: string) => {
++    if (notificationClaims.has(id)) return false
++    notificationClaims.add(id)
++    setTimeout(() => {
++      notificationClaims.delete(id)
++    }, notificationClaimTtl).unref?.()
++    return true
++  })
++
+   ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+     return win?.isFocused() ?? false
+@@ -263,11 +273,13 @@ export function registerIpcHandlers(deps: Deps) {
+ 
+   ipcMain.handle("set-window-focus", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
++    if (!win || win.isDestroyed()) return
+     win?.focus()
+   })
+ 
+   ipcMain.handle("show-window", (event: IpcMainInvokeEvent) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
++    if (!win || win.isDestroyed()) return
+     win?.show()
+   })
+ 
+@@ -277,9 +289,10 @@ export function registerIpcHandlers(deps: Deps) {
+ 
+   ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())
+   ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => {
++    if (event.sender.isDestroyed()) return
+     event.sender.setZoomFactor(factor)
+     const win = BrowserWindow.fromWebContents(event.sender)
+-    if (!win) return
++    if (!win || win.isDestroyed()) return
+     updateTitlebar(win)
+   })
+   ipcMain.handle("get-pinch-zoom-enabled", () => getPinchZoomEnabled())
+@@ -288,7 +301,7 @@ export function registerIpcHandlers(deps: Deps) {
+   })
+   ipcMain.handle("set-titlebar", (event: IpcMainInvokeEvent, theme: TitlebarTheme) => {
+     const win = BrowserWindow.fromWebContents(event.sender)
+-    if (!win) return
++    if (!win || win.isDestroyed()) return
+     setTitlebar(win, theme)
+   })
+   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
+@@ -299,10 +312,16 @@ export function registerIpcHandlers(deps: Deps) {
+   })
+ }
+ 
++function canSend(win: BrowserWindow) {
++  return !win.isDestroyed() && !win.webContents.isDestroyed()
++}
++
+ export function sendMenuCommand(win: BrowserWindow, id: string) {
++  if (!canSend(win)) return
+   win.webContents.send("menu-command", id)
+ }
+ 
+ export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
++  if (!canSend(win)) return
+   win.webContents.send("deep-link", urls)
+ }
+diff --git a/packages/desktop/src/main/menu.ts b/packages/desktop/src/main/menu.ts
+index ac2da7e547..5c996e674a 100644
+--- a/packages/desktop/src/main/menu.ts
++++ b/packages/desktop/src/main/menu.ts
+@@ -19,28 +19,40 @@ type Deps = {
+ }
+ 
+ export function createMenu(deps: Deps) {
+-  if (process.platform !== "darwin") return
++  const platform = (() => {
++    if (process.platform === "darwin") return "macos"
++    if (process.platform === "win32") return "windows"
++    if (process.platform === "linux") return "linux"
++    return undefined
++  })()
+ 
+-  const template = DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, "macos")).map((menu) => {
++  if (!platform) return
++
++  const template = DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, platform)).map((menu) => {
+     if (menu.role) return { role: nativeRole(menu.role), label: nativeT(menu.labelKey) }
++
+     return {
+       label: nativeT(menu.labelKey),
+       submenu: menu.items
+-        ?.filter((entry) => desktopMenuVisible(entry, "macos"))
+-        .map((entry) => nativeItem(entry, deps)),
++        ?.filter((entry) => desktopMenuVisible(entry, platform))
++        .map((entry) => nativeItem(entry, deps, platform)),
+     }
+   })
+ 
+   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+ }
+ 
+-function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOptions {
++function nativeItem(
++  entry: DesktopMenuEntry,
++  deps: Deps,
++  platform: "macos" | "windows" | "linux",
++): MenuItemConstructorOptions {
+   if (entry.type === "separator") return { type: "separator" }
+   if (entry.role) return { role: nativeRole(entry.role), label: entry.labelKey ? nativeT(entry.labelKey) : undefined }
+ 
+   const item: MenuItemConstructorOptions = {
+     label: entry.labelKey ? nativeT(entry.labelKey) : undefined,
+-    accelerator: entry.accelerator?.macos,
++    accelerator: entry.accelerator?.[platform],
+     enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
+   }
+ 
+@@ -48,6 +60,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
+     const command = entry.command
+     item.click = () => deps.trigger(command)
+   }
++
+   if (entry.action) {
+     const action = entry.action
+     item.click = () =>
+@@ -56,6 +69,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
+         relaunch: deps.relaunch,
+       })
+   }
++
+   if (entry.href) {
+     const href = entry.href
+     item.click = () => openExternalURL(href)
+diff --git a/packages/desktop/src/main/windows.ts b/packages/desktop/src/main/windows.ts
+index 6e7b8f3ff9..82300edf34 100644
+--- a/packages/desktop/src/main/windows.ts
++++ b/packages/desktop/src/main/windows.ts
+@@ -5,6 +5,8 @@ import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
+ import { randomUUID } from "node:crypto"
+ import { rmSync } from "node:fs"
+ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
++import type { Session } from "electron"
++import type { WebContents } from "electron"
+ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+ import { fileURLToPath, pathToFileURL } from "node:url"
+ import type { TitlebarTheme } from "../preload/types"
+@@ -61,10 +63,15 @@ const registry = createWindowRegistry<BrowserWindow>({
+     removeStoreFile(windowDataFile(id))
+   },
+ })
++const rendererSessions = new WeakSet<Session>()
+ const titlebarHeight = 40
+ const maxZoomLevel = 10
+ const minZoomLevel = 0.2
+ 
++function canUseWindow(win: BrowserWindow) {
++  return !win.isDestroyed() && !win.webContents.isDestroyed()
++}
++
+ export function setRelaunchHandler(handler: () => void) {
+   relaunchHandler = handler
+ }
+@@ -76,6 +83,7 @@ export function setAppQuitting(quitting = true) {
+ export function setBackgroundColor(color: string) {
+   backgroundColor = color
+   BrowserWindow.getAllWindows().forEach((win) => {
++    if (win.isDestroyed()) return
+     win.setBackgroundColor(color)
+     if (process.platform === "darwin") win.invalidateShadow()
+   })
+@@ -125,12 +133,14 @@ export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> =
+ 
+ export function updateTitlebar(win: BrowserWindow) {
+   if (process.platform !== "win32") return
++  if (!canUseWindow(win)) return
+   win.setTitleBarOverlay(overlay(titlebarThemes.get(win), win.webContents.getZoomFactor()))
+ }
+ 
+ export function setPinchZoomEnabled(enabled: boolean) {
+   getStore().set(PINCH_ZOOM_ENABLED_KEY, enabled)
+   for (const win of BrowserWindow.getAllWindows()) {
++    if (!canUseWindow(win)) continue
+     pinchZoomEnabled.set(win, enabled)
+     win.webContents.send("pinch-zoom-enabled-changed", enabled)
+     if (!enabled && win.webContents.getZoomFactor() !== 1) win.webContents.setZoomFactor(1)
+@@ -165,7 +175,7 @@ export function setDockIcon() {
+   if (!icon.isEmpty()) app.dock?.setIcon(icon)
+ }
+ 
+-export function createMainWindow(id: string = randomUUID()) {
++export function createMainWindow(id: string = randomUUID(), onLoad?: (win: BrowserWindow) => void) {
+   const state = windowState({
+     file: windowStateFile(id),
+     defaultWidth: 1280,
+@@ -204,29 +214,19 @@ export function createMainWindow(id: string = randomUUID()) {
+     },
+   })
+ 
+-  allowRendererPermissions(win)
++  initializeRendererSession(win.webContents.session)
+   wireWindowRecovery(win, id)
+   wireNavigationPolicy(win)
+ 
+-  win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+-    const { requestHeaders } = details
+-    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+-    callback({ requestHeaders })
+-  })
+-
+-  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+-    const { responseHeaders = {} } = details
+-    addRendererHeaders(details.url, responseHeaders)
+-    callback({ responseHeaders })
+-  })
+-
+   state.manage(win)
+   registerWindow(win, id)
+   wireFullscreen(win)
++  if (onLoad) win.webContents.once("did-finish-load", () => onLoad(win))
+   loadWindow(win, "index.html")
+   wireZoom(win)
+ 
+   win.once("ready-to-show", () => {
++    if (win.isDestroyed()) return
+     win.show()
+   })
+ 
+@@ -478,23 +478,42 @@ function addDocumentPolicy(response: Response, file: string) {
+   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+ }
+ 
+-function allowRendererPermissions(win: BrowserWindow) {
+-  const webContentsId = win.webContents.id
++function initializeRendererSession(session: Session) {
++  if (rendererSessions.has(session)) return
++  rendererSessions.add(session)
+ 
+-  win.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
++  session.webRequest.onBeforeSendHeaders((details, callback) => {
++    const { requestHeaders } = details
++    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
++    callback({ requestHeaders })
++  })
++
++  session.webRequest.onHeadersReceived((details, callback) => {
++    const { responseHeaders = {} } = details
++    addRendererHeaders(details.url, responseHeaders)
++    callback({ responseHeaders })
++  })
++
++  session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+     callback(
+       rendererPermissions.has(permission) &&
+         isTrustedRendererUrl(details.requestingUrl) &&
+-        webContents.id === webContentsId,
++        isTrustedRendererUrl(getWebContentsURL(webContents)),
+     )
+   })
+-  win.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
++
++  session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+     if (!rendererPermissions.has(permission)) return false
+-    if (webContents && webContents.id !== webContentsId) return false
++    if (webContents && !isTrustedRendererUrl(getWebContentsURL(webContents))) return false
+     return isTrustedRendererUrl(details.requestingUrl) || isTrustedRendererUrl(requestingOrigin)
+   })
+ }
+ 
++function getWebContentsURL(webContents: WebContents) {
++  if (webContents.isDestroyed()) return
++  return webContents.getURL()
++}
++
+ function isTrustedRendererUrl(value?: string) {
+   return isRendererUrl(value)
+ }
+@@ -517,8 +536,10 @@ function isRendererUrl(value?: string, html = false) {
+ 
+ function wireZoom(win: BrowserWindow) {
+   pinchZoomEnabled.set(win, getPinchZoomEnabled())
++  if (!canUseWindow(win)) return
+   win.webContents.setZoomFactor(1)
+   win.webContents.on("zoom-changed", (event, zoomDirection) => {
++    if (!canUseWindow(win)) return
+     event.preventDefault()
+     if (pinchZoomEnabled.get(win)) {
+       win.webContents.setZoomFactor(clampZoom(win.webContents.getZoomFactor() + (zoomDirection === "in" ? 0.2 : -0.2)))
+@@ -545,6 +566,7 @@ function clampZoom(value: number) {
+ }
+ 
+ function updateZoom(win: BrowserWindow) {
++  if (!canUseWindow(win)) return
+   updateTitlebar(win)
+   win.webContents.send("zoom-factor-changed", win.webContents.getZoomFactor())
+ }
+diff --git a/packages/desktop/src/preload/index.ts b/packages/desktop/src/preload/index.ts
+index dae18b0716..8728649374 100644
+--- a/packages/desktop/src/preload/index.ts
++++ b/packages/desktop/src/preload/index.ts
+@@ -56,7 +56,6 @@ const api: ElectronAPI = {
+     check: () => ipcRenderer.invoke("updater-check"),
+     install: () => ipcRenderer.invoke("updater-install"),
+   },
+-  consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
+   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
+   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
+   isFirstLaunchOnboardingPending: () => ipcRenderer.invoke("is-first-launch-onboarding-pending"),
+@@ -102,6 +101,7 @@ const api: ElectronAPI = {
+   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
+   revealPath: (path) => ipcRenderer.invoke("reveal-path", path),
+   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
++  claimNotification: (id) => ipcRenderer.invoke("claim-notification", id),
+   getWindowFocused: () => ipcRenderer.invoke("get-window-focused"),
+   getWindowFullscreen: () => ipcRenderer.invoke("get-window-fullscreen"),
+   onWindowFullscreenChanged: (cb) => {
+diff --git a/packages/desktop/src/preload/types.ts b/packages/desktop/src/preload/types.ts
+index 20c39097d3..d953a039de 100644
+--- a/packages/desktop/src/preload/types.ts
++++ b/packages/desktop/src/preload/types.ts
+@@ -48,7 +48,6 @@ export type ElectronAPI = {
+   awaitInitialization: () => Promise<ServerReadyData>
+   wslServers: WslServersAPI
+   updater: UpdaterAPI
+-  consumeInitialDeepLinks: () => Promise<string[]>
+   getDefaultServerUrl: () => Promise<string | null>
+   setDefaultServerUrl: (url: string | null) => Promise<void>
+   isFirstLaunchOnboardingPending: () => Promise<boolean>
+@@ -94,6 +93,7 @@ export type ElectronAPI = {
+   openPath: (path: string, app?: string) => Promise<void>
+   revealPath: (path: string) => Promise<boolean>
+   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
++  claimNotification: (id: string) => Promise<boolean>
+   getWindowFocused: () => Promise<boolean>
+   getWindowFullscreen: () => Promise<boolean>
+   onWindowFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
+diff --git a/packages/desktop/src/renderer/index.tsx b/packages/desktop/src/renderer/index.tsx
+index 496060e0d6..7748923ef5 100644
+--- a/packages/desktop/src/renderer/index.tsx
++++ b/packages/desktop/src/renderer/index.tsx
+@@ -22,9 +22,9 @@ import { createMemoryHistory, MemoryRouter, type BaseRouterProps } from "@solidj
+ import { createEffect, createMemo, createResource, createSignal, onCleanup, Show } from "solid-js"
+ import { render } from "solid-js/web"
+ import pkg from "../../package.json"
+-import { t } from "./i18n"
+ import { initializationData } from "./initialization"
+ import { DesktopFirstLaunchOnboarding } from "./onboarding"
++import { t } from "./i18n"
+ import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
+ import { windowFullscreen } from "./window-fullscreen"
+ import { availableStartupServer, readyWslConnections } from "./wsl/connections"
+@@ -78,7 +78,6 @@ const emitDeepLinks = (urls: string[]) => {
+ }
+ 
+ const listenForDeepLinks = () => {
+-  void window.api.consumeInitialDeepLinks().then((urls) => emitDeepLinks(urls))
+   return window.api.onDeepLink((urls) => emitDeepLinks(urls))
+ }
+ 
+@@ -267,6 +266,8 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
+       }
+     },
+ 
++    claimNotification: (id) => window.api.claimNotification(id),
++
+     fetch: (input, init) => {
+       if (input instanceof Request) return fetch(input)
+       return fetch(input, init)
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index 0f85d44f20..f4756a4422 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -521,7 +521,7 @@ const layer = Layer.effect(
+ 
+           const cfg = yield* config.get()
+           const sh = Shell.preferred(cfg.shell)
+-          const args = Shell.args(sh, input.command, cwd)
++          const args = Shell.args(sh, input.command, cwd, cfg.powershell_profile ?? true)
+           let output = ""
+           let aborted = false
+ 
+diff --git a/packages/opencode/src/tool/shell.ts b/packages/opencode/src/tool/shell.ts
+index 1e4423e017..77f48cff48 100644
+--- a/packages/opencode/src/tool/shell.ts
++++ b/packages/opencode/src/tool/shell.ts
+@@ -290,14 +290,18 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
+   })
+ })
+ 
+-function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
++function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv, profile: boolean) {
+   if (process.platform === "win32" && Shell.ps(shell)) {
+-    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+-      cwd,
+-      env,
+-      stdin: "ignore",
+-      detached: false,
+-    })
++    return ChildProcess.make(
++      shell,
++      ["-NoLogo", ...(profile ? [] : ["-NoProfile"]), "-NonInteractive", "-Command", command],
++      {
++        cwd,
++        env,
++        stdin: "ignore",
++        detached: false,
++      },
++    )
+   }
+ 
+   return ChildProcess.make(command, [], {
+@@ -432,6 +436,7 @@ export const ShellTool = Tool.define(
+         cwd: string
+         env: NodeJS.ProcessEnv
+         timeout: number
++        profile: boolean
+       },
+       ctx: Tool.Context,
+     ) {
+@@ -481,7 +486,7 @@ export const ShellTool = Tool.define(
+       const code: number | null = yield* Effect.scoped(
+         Effect.gen(function* () {
+           yield* Effect.addFinalizer(closeSink)
+-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
++          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env, input.profile))
+ 
+           yield* Effect.forkScoped(
+             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
+@@ -608,6 +613,7 @@ export const ShellTool = Tool.define(
+           parameters: prompt.parameters,
+           execute: (params: Parameters, ctx: Tool.Context) =>
+             Effect.gen(function* () {
++              const cfg = yield* config.get()
+               const instanceCtx = yield* InstanceState.context
+               const cwd = params.workdir
+                 ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
+@@ -635,6 +641,7 @@ export const ShellTool = Tool.define(
+                   cwd,
+                   env: yield* shellEnv(ctx, cwd),
+                   timeout,
++                  profile: cfg.powershell_profile ?? true,
+                 },
+                 ctx,
+               )
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index f06c20cc41..31e21cefc5 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -1889,6 +1889,7 @@ export type AttachmentConfig = {
+ export type Config = {
+   $schema?: string
+   shell?: string
++  powershell_profile?: boolean
+   logLevel?: LogLevel
+   server?: ServerConfig
+   command?: {
+diff --git a/packages/app/src/pages/layout/desktop-deep-links.tsx b/packages/app/src/pages/layout/desktop-deep-links.tsx
+new file mode 100644
+index 0000000000..333df2f9d3
+--- /dev/null
++++ b/packages/app/src/pages/layout/desktop-deep-links.tsx
+@@ -0,0 +1,104 @@
++import { createEffect, onCleanup, onMount } from "solid-js"
++import { createStore } from "solid-js/store"
++import { useNavigate } from "@solidjs/router"
++import { base64Encode } from "@opencode-ai/core/util/encode"
++import { retry } from "@opencode-ai/core/util/retry"
++import { useLayout } from "@/context/layout"
++import { usePlatform } from "@/context/platform"
++import { useServer } from "@/context/server"
++import { useServerSDK } from "@/context/server-sdk"
++import { useServerSync } from "@/context/server-sync"
++import { setSessionHandoff } from "@/pages/session/handoff"
++import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
++import { listAllSessions } from "@/utils/session"
++import { sessionHref } from "@/utils/session-route"
++import { listenForDeepLinks, parseDeepLink, parseNewSessionDeepLink } from "./deep-links"
++import { latestRootSession } from "./helpers"
++
++export function DesktopDeepLinks() {
++  const platform = usePlatform()
++  const server = useServer()
++  const serverSDK = useServerSDK()
++  const serverSync = useServerSync()
++  const layout = useLayout()
++  const navigate = useNavigate()
++  const serverKey = server.key
++  const scope = server.scope()
++  const [state, setState] = createStore({ urls: [] as string[], current: undefined as string | undefined })
++  const meta = { disposed: false, cleanup: () => {} }
++
++  onMount(() => {
++    if (platform.platform !== "desktop") return
++    meta.cleanup = listenForDeepLinks(window, (urls) => setState("urls", (current) => [...current, ...urls]))
++  })
++
++  onCleanup(() => {
++    meta.disposed = true
++    meta.cleanup()
++    const pending = [...(state.current ? [state.current] : []), ...state.urls]
++    if (pending.length === 0) return
++    window.__OPENCODE__ ??= {}
++    window.__OPENCODE__.deepLinks = [...pending, ...(window.__OPENCODE__.deepLinks ?? [])]
++  })
++
++  createEffect(() => {
++    if (!serverSync().ready || state.current || state.urls.length === 0) return
++    const url = state.urls[0]
++    setState({ urls: state.urls.slice(1), current: url })
++    void handle(url).finally(() => {
++      if (!meta.disposed) setState("current", undefined)
++    })
++  })
++
++  async function handle(url: string) {
++    const directory = parseDeepLink(url)
++    if (directory) {
++      await openProject(directory)
++      return
++    }
++
++    const link = parseNewSessionDeepLink(url)
++    if (!link || meta.disposed) return
++    layout.projects.open(link.directory)
++    layout.home.setSelection({ server: serverKey, directory: link.directory })
++    const slug = base64Encode(link.directory)
++    if (link.prompt) {
++      setSessionHandoff(SessionStateKey.from(scope, SessionRouteKey.fromLegacy(slug)), {
++        prompt: link.prompt,
++      })
++    }
++    navigate(link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`)
++  }
++
++  async function openProject(directory: string) {
++    const project = await retry(() => serverSDK().api.project.current({ location: { directory } })).catch(
++      () => undefined,
++    )
++    const root = project?.directory ?? directory
++    const workspaces = project
++      ? await retry(() => serverSDK().api.project.directories({ projectID: project.id, location: { directory: root } }))
++          .then((items) => items.map((item) => item.directory))
++          .catch(() => [])
++      : []
++    const directories = [root, ...workspaces.filter((item) => item !== root)]
++    const latest = latestRootSession(
++      await Promise.all(
++        directories.map(async (item) => ({
++          path: { directory: item },
++          session: await retry(() =>
++            listAllSessions(serverSDK().api.session, { directory: item, parentID: null, order: "desc" }),
++          ).catch(() => []),
++        })),
++      ),
++      Date.now(),
++    )
++
++    if (meta.disposed) return
++    layout.projects.open(root)
++    server.projects.touch(root)
++    layout.home.setSelection({ server: serverKey, directory: root })
++    navigate(latest ? sessionHref(serverKey, latest.id) : `/${base64Encode(root)}/session`)
++  }
++
++  return null
++}
+diff --git a/packages/desktop/src/main/deep-link.ts b/packages/desktop/src/main/deep-link.ts
+new file mode 100644
+index 0000000000..359189b98b
+--- /dev/null
++++ b/packages/desktop/src/main/deep-link.ts
+@@ -0,0 +1,30 @@
++export function parseDeepLinkWindow(input: string) {
++  if (!input.startsWith("opencode://")) return "current"
++
++  try {
++    const url = new URL(input)
++    if (url.hostname !== "open-project") return "current"
++    return url.searchParams.get("window") === "new" ? "new" : "current"
++  } catch {
++    return "current"
++  }
++}
++
++export function partitionDeepLinks(urls: string[]) {
++  return urls.reduce(
++    (result, url) => {
++      if (parseDeepLinkWindow(url) === "new") {
++        result.newWindows.push([url])
++        return result
++      }
++
++      result.current.push(url)
++      return result
++    },
++    { current: [] as string[], newWindows: [] as string[][] },
++  )
++}
++
++export function extractDeepLinks(argv: string[]) {
++  return argv.filter((arg) => arg.startsWith("opencode://"))
++}
+diff --git a/packages/desktop/src/main/deep-link.test.ts b/packages/desktop/src/main/deep-link.test.ts
+new file mode 100644
+index 0000000000..ef3cc33236
+--- /dev/null
++++ b/packages/desktop/src/main/deep-link.test.ts
+@@ -0,0 +1,32 @@
++import { describe, expect, test } from "bun:test"
++import { extractDeepLinks, parseDeepLinkWindow, partitionDeepLinks } from "./deep-link"
++
++describe("desktop deep links", () => {
++  test("routes open-project window=new to a new window", () => {
++    expect(parseDeepLinkWindow("opencode://open-project?directory=/tmp/demo&window=new")).toBe("new")
++  })
++
++  test("keeps other deep links on the current window", () => {
++    expect(parseDeepLinkWindow("opencode://open-project?directory=/tmp/demo")).toBe("current")
++    expect(parseDeepLinkWindow("opencode://new-session?directory=/tmp/demo&window=new")).toBe("current")
++    expect(parseDeepLinkWindow("https://example.com")).toBe("current")
++  })
++
++  test("partitions deep links by target window", () => {
++    expect(
++      partitionDeepLinks([
++        "opencode://open-project?directory=/a",
++        "opencode://open-project?directory=/b&window=new",
++        "opencode://new-session?directory=/c",
++      ]),
++    ).toEqual({
++      current: ["opencode://open-project?directory=/a", "opencode://new-session?directory=/c"],
++      newWindows: [["opencode://open-project?directory=/b&window=new"]],
++    })
++  })
++
++  test("extracts an encoded Windows project deep link from launch arguments", () => {
++    const url = "opencode://open-project?directory=C%3A%5CUsers%5CNorman%5C.dotfiles"
++    expect(extractDeepLinks(["electron.exe", "C:\\app\\index.js", url])).toEqual([url])
++  })
++})
